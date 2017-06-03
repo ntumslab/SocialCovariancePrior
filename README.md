@@ -4,5 +4,5 @@ Chin-Chi Hsu, Mi-Yen Yeh, Shou-De Lin
 
 ## Directories
 
-* **supplementary_materials**: additional proofs and explanations of our proposed SCP.
+* **supplementary_materials**: additional proofs and explanations of our proposed Social Covariance Prior (SCP).
 * **code**: SCP source code for our experiments.
