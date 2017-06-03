@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Jensen's Inequality</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\KL}{\mathbb{KL}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	Jensen's Inequality
+</h1>
+
+<p>
+Due to page limits, Section 4.1 omits few trivial inferences of log likelihood lower bound derivation.
+Here we show the complete derivation.
+</p>
+
+<hr>
+
+<h2>Description in terms of probability theory</h2>
+
+<p>
+Let \( f(X) \) be a <i>concave</i> function of random variable \( X \) and \( \E \) be the expectation function. Then we have
+\[
+	f(\E(X)) \geq \E(f(X))
+\]
+Clearly, logarithmic function \( \log \) (base \( e \)) is a concave function. Hence
+\[
+	\log(\E(X)) \geq \E(\log(X))
+\]
+</p>
+
+<hr>
+
+<h2>Lower bound of log likelihood</h2>
+
+<p>
+We would like to maximize likelihood function \( p(R | \theta) \) where \( R \) is a set of observed variables (e.g. ratings in our work), \( \theta \) is a set of corresponding parameters.
+Besides, the likelihood function is composed of a set of hidden random variables \( Z \).
+<br>
+Here we discuss only the case of \( R, Z \) being continuous random variable sets.
+\( p(R | \theta) \) is the summation of all possible values of random variables in \( Z \) as follows:
+\[
+	p(R | \theta) = \int_{Z} p(R, Z| \theta) d Z
+\]
+We import an auxiliary probability distribution function \( q(Z | \theta') \) to model the distribution of \( Z \) given another parameter set \( \theta' \).
+By Jensen's Inequality, we have the following lower bound inference:
+\[
+\begin{align}
+		\log p(R | \theta) & = \log \int_{Z} p(R, Z | \theta) d Z & \because \text{ marginal probability} \\
+		& = \log \int_{Z} q(Z | \theta') \frac{p(R, Z | \theta)}{q(Z | \theta')} d Z & \because \text{ adding } q(Z | \theta') \\
+		& = \log \E_{q(Z | \theta')} \left [ \frac{p(R, Z | \theta)}{q(Z | \theta')} \right ] & \because \E_{p(x)}[f(x)] = \int_{x} p(x) f(x) d x \\
+		& \geq \E_{q(Z | \theta')} \left [ \log \frac{p(R, Z | \theta)}{q(Z | \theta')} \right ] & \because \text{ Jensen's Inequality} \\
+		& = \E_{q(Z | \theta')} \left [ \log \frac{p(Z| R, \theta) p(R | \theta)}{q(Z | \theta')} \right ] & \because \text{ conditional probability} \\
+		& = \E_{q(Z | \theta')} \left [ \log p(R | \theta) - \log \frac{q(Z | \theta')}{p(Z | R, \theta)} \right ] & \because \text{ property of } \log \\
+		& = \E_{q(Z | \theta')} \left [ \log p(R | \theta) \right ] - \E_{q(Z | \theta')} \left [ \log \frac{q(Z | \theta')}{p(Z | R, \theta)} \right ] & \because \text{ property of } \E \\
+		& = \log p(R | \theta) - \KL \left [ q(Z | \theta') \| p(Z | R, \theta) \right ] & \because \text{ constant } p(R | \theta) \text{ for } \E, \text{ definition of } \KL
+\end{align}
+\]
+\( \KL \) is the non-negative Kullback-Leibler divergence.
+Our work is to minimize the divergence function i.e. maximize the lower bound of \( \log p(R | \theta) \).
+</p>
+
+<hr>
+
+<h2>VEM v.s. EM</h2>
+
+<p>
+Since \( q(Z | \theta') \) can be arbitrarily chosen, to minimize \( \KL \), we naturally choose \(q(Z | \theta') = p(Z | R, \theta) \) such that \( \KL = 0 \).
+It is just the E-step of Expectation Maximization (EM) algirithm.
+</p>
+
+<p>
+Variational Expectation Maximization (VEM) has the same M-step as EM; however, VEM selects a different \( q(Z | \theta') \) in E-step since it is difficult to find out the analytic solution of \(p(Z | R, \theta) \) in some cases e.g. matrix factorization.
+Usually \( q(Z | \theta') \) is defined as the distribution of all random variables in \( Z \) independent of each other, called mean-field approximation.
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

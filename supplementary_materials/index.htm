@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>A General Framework for Implicit and Explicit Social Recommendation</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<h1>
+	A General Framework for Implicit and Explicit Social Recommendation
+</h1>
+
+<table>
+	<tr>
+		<td><b>Chin-Chi Hsu</b></td>
+		<td><i>Institute of Information Science, Academia Sinica, Taipei, Taiwan</i></td>
+		<td>chinchi [at] iis.sinica.edu.tw</td>
+	</tr>
+	<tr>
+		<td><b>Mi-Yen Yeh</b></td>
+		<td><i>Institute of Information Science, Academia Sinica, Taipei, Taiwan</i></td>
+		<td>miyen [at] iis.sinica.edu.tw</td>
+	</tr>
+	<tr>
+		<td><b>Shou-De Lin</b></td>
+		<td><i>Department of Computer Science and Information Engineering, National Taiwan University, Taipei, Taiwan</i></td>
+		<td>sdlin [at] csie.ntu.edu.tw</td>
+	</tr>
+</table>
+
+<hr>
+
+<p>
+Here is the supplemental material of our paper <i>"A General Framework for Implicit and Explicit Social Recommendation"</i>.
+We follow the same notations introduced in our paper.
+
+<ul>
+	<li>Detailed mathematical derivations in Variational Expectation Maximization (VEM)
+		<ul>
+			<li><a href = "jensens_inequality.htm">Jensen's inequality</a></li>
+			<li><a href = "e_step.htm">E-step: Updating parameters \( \theta' \) in variational distribution \( q(Z | \theta') \)</a>
+				<ul>
+					<li><a href = "e_step_latent_feature_vector.htm">\( \lambda_{U}, \lambda_{V}, \gamma_{U}, \gamma_{V} \) for latent feature vector (multivariate normal distribution)</a></li>
+					<li><a href = "e_step_similarity_matrix.htm">\( \Lambda_{U}, \Lambda_{V} \) for similarity matrix (Wishart distribution)</a></li>
+				</ul>
+			</li>
+			<li><a href = "m_step.htm">M-step: Updating parameters \( \theta \) in model likelihood \( p(R | \theta) \)</a>
+				<ul>
+					<li><a href = "m_step_l2_norm_variance.htm">\( \sigma_{U}^{2}, \sigma_{V}^{2} \) for \( l2 \) -norm regularization (zero-mean Gaussian spherical distribution)</a></li>
+					<li><a href = "m_step_scale_matrix.htm">\( \Lambda_{U}, \Lambda_{V} \) for similarity matrix (Wishart distribution)</a></li>
+					<li><a href = "m_step_rating_variance.htm">\( \sigma_{R}^{2} \) for rating (normal distribution)</a></li>
+				</ul>
+			</li>
+			<li><a href = "rating_prediction.htm">Rating prediction \( \hat{R} \)</a></li>
+		</ul>
+	</li>
+</ul>
+
+</p>
+
+<hr>
+
+<h2>References</h2>
+
+<ol>
+	<li>K. B. Petersen and M. S. Pedersen. The matrix cookbook, nov 2012</li>
+	<li>MathJax: mathematics display in our supplemental material</li>
+</ol>
+
+
+</body>
+</html> 

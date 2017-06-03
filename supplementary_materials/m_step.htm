@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>M-step</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\N}{\mathcal{N}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	M-step in Variational Expectation Maximization
+</h1>
+
+<hr>
+
+<h2>Description</h2>
+
+<p>
+M-step in VEM is to evaluate the values of model parameters in \( \theta \).
+</p>
+
+<p>
+Since we do not understand the true distribution of likelihood \( p(R | \theta) \), we are disabled to learn true \( \theta \).
+However, by Jensen's Inequality, we have a lower bound \( L \) of the log likelihood.
+The lower bound provides an indirect way to evaluate the values in \( \theta \).
+</p>
+
+<p>
+We can rewrite \( L \) to eliminate unimportant terms to speed up analyses.
+\[
+\begin{align}
+	\log p(R | \theta) & \geq \E_{q(Z | \theta')} \left [ \log \frac{p(R, Z | \theta)}{q(Z | \theta')} \right ] & \because \text{ Jensen's Inequality} \\
+	& = \E_{q(Z | \theta')} \left [ \log p(R, Z | \theta) \right ] - \E_{q(Z | \theta')} \left [ \log q(Z | \theta') \right ] & \because \text{ properties of } \log, \E \\
+\end{align}
+\]
+Clearly, the second term (<i>entropy</i> of \( q(Z | \theta') \)) is not relevant to \( \theta \).
+Hence, we just extend the first term to find the close-form solutions of variables in \( \theta \).
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

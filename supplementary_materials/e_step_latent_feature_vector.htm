@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Latent feature vector</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\N}{\mathcal{N}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	\( \lambda_{U}, \lambda_{V}, \gamma_{U}, \gamma_{V} \) for latent feature vector
+</h1>
+
+<p>
+To show the derivation more intuitively, the equations in this page may be slightly different from what our paper presents, but the final equations are exactly equivalent.
+</p>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to extend \( \log q(U_{i} | \theta') = \E_{- q(U_{i} | \theta')} \left [ \log p(R, Z | \theta) \right ] + C_{0} \) for latent feature vector \( U_{i} \) of user \( i \).
+Using conjugate priors, we already know that posterior \( q(U_{i} | \theta') \) follows the same distribution as the prior of \( U_{i} \) (zero-mean Gaussion spherical prior and social prior).
+That is, \( q(U_{i} | \theta') \) follows multivariate normal distribution of mean vector \( \lambda_{Ui} \) and covariance matrix \( \gamma_{Ui} \).
+</p>
+
+<p>
+We omit the derivation of \( \lambda_{V}, \gamma_{V} \) due to similar inference ways.
+</p>
+
+<hr>
+
+<h2>Completing the square</h2>
+
+<p>
+Given variable vector \( x \), constant vector \( \beta \)  and constant positive-definite matrix \( A \), we have
+\[
+f(x) = x^{T} A x - x^{T} \beta - \beta^{T} x
+\]
+Positive-definite \( A \) is invertiable (\( A^{-1} A = A A^{-1} = I \), the identity matrix) and symmetric ( \( A = A^{T} \) ). Then
+\[
+\begin{align}
+	f(x) & = x^{T} A x - x^{T} \beta - \beta^{T} x + \beta^{T} A^{-T} \beta - \beta^{T} A^{-T} \beta \\
+	& = x^{T} A x - x^{T} ( A A^{-1} ) \beta - \beta^{T} ( A^{-T} A ) x + \beta^{T} A^{-T} ( A A^{-1} ) \beta - \beta^{T} A^{-T} \beta \\
+	& = x^{T} A x - x^{T} A ( A^{-1} \beta ) - ( A^{-1} \beta ) ^{T} A x + ( A^{-1} \beta ) ^{T} A ( A^{-1} \beta ) - \beta^{T} A^{-T} \beta \\
+	& = \left (x - A^{-1} \beta \right ) ^{T} A \left (x - A^{-1} \beta \right ) - \beta^{T} A^{-T} \beta
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Expectations in mean-field approximation</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\E ( V_{j} ) & = \lambda_{Vj} & \\
+	\E ( V_{j} V_{j}^{T} ) & = \lambda_{Vj} \lambda_{Vj}^{T} + \gamma_{Vj} & \\
+	\E ( U_{f} ) & = \lambda_{Uf} & \\
+	\E ( S_{Uif} ) & = \E ( S_{Uif}^{T} ) & \because \text{ covariance matrix is symmetric} \\
+	& = \E ( S_{Uif} ) ^{T} & \\
+	& = (K + 1) \Lambda_{Uif} &
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Derivation of \( \lambda_{U}, \gamma_{U} \)</h2>
+
+<p>
+To avoid notation ambiguity, we infer \( \lambda_{Ua}, \gamma_{Ua} \) of user \( a \) as follows. Note that \( \E \) follows distribution \( -q(U_{i} | \theta') \).
+\[
+\begin{align}
+	\log q(U_{a} | \theta') & = \E \left [ \log p(R, Z | \theta) \right ] + C_{0} \\
+	& = \E \left [
+	- \frac{1}{2 \sigma_{R}^{2}} \sum_{j = 1}^{M} \delta_{aj} \left ( R_{aj} - U_{a}^{T} V_{j} \right ) ^{2}
+	- \frac{1 - b_{U}}{2} U_{a}^{T} \sigma_{U}^{-2} I U_{a}
+		- \frac{b_{U}}{2} \sum_{f \neq a} \frac{1}{T_{Ua}} (U_{a} - U_{f})^{T} S_{Uaf} (U_{a} - U_{f})
+		- \frac{b_{U}}{2} \sum_{i \neq a} \frac{1}{T_{Ui}} (U_{i} - U_{a})^{T} S_{Uia} (U_{i} - U_{a})
+	\right ] + C_{1} \\
+	& = - \frac{1}{2} \E \left [
+		\sum_{j = 1}^{M} \delta_{aj} \left ( -2 R_{ij} U_{a}^{T} V_{j} + U_{a}^{T} V_{j} V_{j}^{T} U_{a} \right )
+		+ (1 - b_{U}) U_{a}^{T} \sigma_{U}^{-2} I U_{a}
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \left ( U_{a}^{T} S_{Uaf} U_{a} - U_{a}^{T} S_{Uaf} U_{f} - U_{f}^{T} S_{Uaf} U_{a} \right )
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \left ( U_{a}^{T} S_{Uia} U_{a} - U_{a}^{T} S_{Uia} U_{i} - U_{i}^{T} S_{Uia} U_{a} \right )
+	\right ] + C_{2} \\
+	& = - \frac{1}{2} \left [
+		\sum_{j = 1}^{M} \delta_{aj} \left ( - R_{aj} U_{a}^{T} \E ( V_{j} ) - R_{aj} \E ( V_{j} ) ^{T} U_{a} + U_{a}^{T} \E ( V_{j} V_{j}^{T} ) U_{a} \right )
+		+ (1 - b_{U}) U_{a}^{T} \sigma_{U}^{-2} I U_{a}
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \left [ U_{a}^{T} \E ( S_{Uaf} ) U_{a} - U_{a}^{T} \E ( S_{Uaf} ) \E ( U_{f} ) - \E ( U_{f} ) ^{T} \E ( S_{Uaf} ) U_{a} \right ]
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \left [ U_{a}^{T} \E ( S_{Uia} ) U_{a} - U_{a}^{T} \E ( S_{Uia} ) \E ( U_{i} ) - \E ( U_{i} ) ^{T} \E ( S_{Uia} ) U_{a} \right ]
+	\right ] + C_{3} \\
+	& = - \frac{1}{2} \left \{
+		U_{a}^{T} \left [
+			\sum_{j = 1}^{M} \delta_{aj} \E ( V_{j} V_{j}^{T} )
+			+ (1 - b_{U}) \sigma_{R}^{-2} I
+			+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \E ( S_{Uaf} )
+			+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \E ( S_{Uia} )
+		\right ] U_{a} 
+		- U_{a}^{T} \left [
+			\sum_{j = 1}^{M} \delta_{aj} R_{aj} \E ( V_{j} )
+			+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \E ( S_{Uaf} ) \E ( U_{f} )
+			+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \E ( S_{Uia} ) \E ( U_{i} )
+		\right ] 
+		- \left [
+			\sum_{j = 1}^{M} \delta_{aj} R_{aj} \E ( V_{j} )
+			+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \E ( S_{Uaf} ) \E ( U_{f} )
+			+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \E ( S_{Uia} ) \E ( U_{i} )
+			\right ] ^{T} U_{a}
+	\right \} + C_{4}
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( U_{a} \). Compared with the function in completing the square, we discover that
+\[
+\begin{align}
+	A & =  \sum_{j = 1}^{M} \delta_{aj} \E ( V_{j} V_{j}^{T} )
+		+ (1 - b_{U}) \sigma_{R}^{-2} I
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \E ( S_{Uaf} )
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \E ( S_{Uia} ) \\
+	& =  \sum_{j = 1}^{M} \delta_{aj}  \left ( \lambda_{Vj} \lambda_{Vj}^{T} + \gamma_{Vj} \right )
+		+ (1 - b_{U}) \sigma_{R}^{-2} I
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} (K + 1) \Lambda_{Uaf}
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} (K + 1) \Lambda_{Uia} \\
+	\beta & = \sum_{j = 1}^{M} \delta_{aj} R_{aj} \E ( V_{j} )
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} \E ( S_{Uaf} ) \E ( U_{f} )
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} \E ( S_{Uia} ) \E ( U_{i} ) \\
+	& = \sum_{j = 1}^{M} \delta_{aj} R_{aj} \lambda_{Vj}
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} (K + 1) \Lambda_{Uaf} \lambda_{Uf}
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} (K + 1) \Lambda_{Uia} \lambda_{Ui}
+\end{align}
+\]
+Hence, we can quickly write down the conclusion of completing the square:
+\[
+\begin{align}
+	\log q(U_{a} | \theta') & = - \frac{1}{2} \left [
+		U_{a}^{T} A U_{a}
+		+ U_{a}^{T} \beta
+		+ \beta^{T} U_{a}
+	\right ] + C_{5} \\
+	& = - \frac{1}{2} \left [
+		\left (
+			U_{a} - A^{-1} \beta
+		\right ) ^{T}
+		A
+		\left (
+			U_{a} - A^{-1} \beta
+		\right )
+	\right ] + C_{6} \\
+	& = - \frac{1}{2} \left [
+		\left (
+			U_{a} - \lambda_{Ua}
+		\right ) ^{T}
+		\gamma_{Ua}^{-1}
+		\left (
+			U_{a} - \lambda_{Ua}
+		\right )
+	\right ] + C_{7} \\
+\end{align}
+\]
+The last equation reflects the logarithmic form of multivariate normal distribution of mean vector \( \lambda_{Ua} \) and covariance matrix \( \gamma_{Ua} \).
+The two parameters are updated in E-step:
+\[
+\begin{align}
+	\lambda_{Ua} & = A^{-1} \beta \\
+	& = \left [
+		\sum_{j = 1}^{M} \delta_{aj}  \left ( \lambda_{Vj} \lambda_{Vj}^{T} + \gamma_{Vj} \right )
+		+ (1 - b_{U}) \sigma_{R}^{-2} I
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} (K + 1) \Lambda_{Uaf}
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} (K + 1) \Lambda_{Uia}
+	\right ] ^{-1} \left [
+		\sum_{j = 1}^{M} \delta_{aj} R_{aj} \lambda_{Vj}
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} (K + 1) \Lambda_{Uaf} \lambda_{Uf}
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} (K + 1) \Lambda_{Uia} \lambda_{Ui}
+	\right ] \\
+	\gamma_{Ua} & = A^{-1} \\
+	& = \left [
+		\sum_{j = 1}^{M} \delta_{aj}  \left ( \lambda_{Vj} \lambda_{Vj}^{T} + \gamma_{Vj} \right )
+		+ (1 - b_{U}) \sigma_{R}^{-2} I
+		+ b_{U} \sum_{f \neq a} \frac{1}{T_{Ua}} (K + 1) \Lambda_{Uaf}
+		+ b_{U} \sum_{i \neq a} \frac{1}{T_{Ui}} (K + 1) \Lambda_{Uia}
+	\right ] ^{-1}
+\end{align}
+\]
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

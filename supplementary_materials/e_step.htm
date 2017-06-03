@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>E-step</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\N}{\mathcal{N}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	E-step in Variational Expectation Maximization
+</h1>
+
+<hr>
+
+<h2>Description</h2>
+
+<p>
+E-step in VEM is to determine the variational distribution of hidden random variables \( Z \), or evaluate the corresponding values of variational parameters in \( \theta' \).
+</p>
+
+<p>
+In our paper, we have stated that the intractability of \( p(Z | R, \theta) \) prevents the probability distribution from being assigned to \( q(Z | \theta') \).
+Instead, a common assumption of \( q(Z | \theta') \) is that all the random variables in \( Z \) are independent of each other.
+The solution, called <i>mean-field approaximation</i>, can avoid many intractability problems.
+The main benefit of mean field is that the joint probability of two dependent random variables can be factorized into two independent probability distributions.
+Consequently, it is simpler to analyze the expected value \( \E_{q(Z | \theta')} \left [ \log p(R, Z | \theta) \right ] \).
+</p>
+
+<p>
+Mean-field assumption brings a practical principle used to analyze the distribution of random variables in \( Z \).
+For example, in our model, a latent feature vector \( U_{i} \in Z \) of user \( i \) is derived its posterior distribution using the principle:
+\[
+	\log q(U_{i} | \theta') = \E_{- q(U_{i} | \theta')} \left [ \log p(R, Z | \theta) \right ] + C
+\]
+\( C \) is a constant term for \( U_{i} \).
+\( - q(U_{i} | \theta') \) means the joint probability distribution of all random variables in \( Z \) except \( U_{i} \) itself.
+Here the distribution of \( q(U_{i} | \theta') \) should be known to define what parameters in \( \theta' \) to be analyzed.
+Fortunately, using the concept of <i>conjugate priors</i>, we have the same distribution between prior and posterior distributions, and the prior distribution, multivariate normal distribution for \( U_{i} \), is defined in model development.
+Thus we can determine \( \theta' = \{ \lambda_{Ui}, \gamma_{Ui} \} \) and evaluate their values.
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Scale matrix</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\tr}{\text{tr}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	\( \Lambda_{U}, \Lambda_{V} \) for similarity matrix
+</h1>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to take the derivative of the lower bound \( L \) of \( \log p(R | \theta) \) in terms of parameters \( \Lambda_{U}, \Lambda_{V} \).
+M-step updates \( \Lambda_{U}, \Lambda_{V}\) using their close-form solutions.
+</p>
+
+<p>
+We omit the derivation of \( \Lambda_{V} \) due to similar inference ways.
+</p>
+
+<hr>
+
+<h2>Matrix derivatives</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\frac{\partial \log | X | }{\partial X} & = | X |^{-1} \frac{\partial | X |}{\partial X} \\
+	& = | X |^{-1} | X | X^{-T} \\
+	& = X^{-T} \\
+	\frac{\partial \tr (X^{-1} B)}{\partial X} & = - \left ( X^{-1} B X^{-1} \right ) ^{T} \\
+	& = -  X^{-T} B^{T} X^{-T} \\
+\end{align}
+\]
+If \( X, B \) are symmetric matrices (e.g. covariance matrices), then we have
+\[
+\begin{align}
+	\frac{\partial \log | X | }{\partial X} & = X^{-1} \\
+	\frac{\partial \tr (X^{-1} B)}{\partial X} & = - X^{-1} B X^{-1} \\
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Expectations in mean-field approximation</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\E [ S_{Uif} ] & = \nu_{Uif} \Lambda_{Uif} \\
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Derivation of \( \Lambda_{U} \)</h2>
+
+<p>
+Let \( L \) be the function of \( \Lambda_{U} \).
+Note that \( \E \) follows distribution \( q(Z | \theta') \).
+\[
+\begin{align}
+	L(\Lambda_{U}) & = \E [ p(R, Z | \theta) ] + C_{0} \\
+	& = \E \left [
+		\sum_{(i, f) \in E_{U}} \frac{b_{U}}{T_{Ui}} \left (
+			- \frac{1}{2} \tr( \Lambda_{U}^{-1} S_{Uif} )
+			- \frac{\nu_{U}}{2} \log | \Lambda_{U} |
+		\right )
+	\right ] + C_{1} \\
+	& = - \sum_{(i, f) \in E_{U}} \frac{b_{U}}{2 T_{Ui}} \left [
+		\tr [ \Lambda_{U}^{-1} \E (S_{Uif}) ]
+		+ \nu_{U} \log | \Lambda_{U} |
+	\right ] + C_{2} \\
+	& = - \sum_{(i, f) \in E_{U}} \frac{b_{U}}{2 T_{Ui}} \left [
+		\tr \left ( \Lambda_{U}^{-1} \nu_{Uif} \Lambda_{Uif} \right )
+		+ \nu_{U} \log | \Lambda_{U} |
+	\right ] + C_{3} \\
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( \sigma_{U}^{2} \).
+We always assign degrees of freedom \( \nu_{U} = K \) and then \( \nu_{Uif} = \nu_{u} + 1 = K + 1 \).
+Then we take the derivative and let it be 0.
+\[
+\begin{align}
+	\frac{\partial L}{\partial \Lambda_{U}} & = - \sum_{(i, f) \in E_{U}} \frac{b_{U}}{2 T_{Ui}} \left [
+		- \Lambda_{U}^{-1} \left (
+			\nu_{Uif} \Lambda_{Uif}
+		\right ) \Lambda_{U}^{-1}
+		+ \nu_{U} \Lambda_{U}^{-1}
+	\right ] \\
+	& = 0 \\
+	\implies \Lambda_{U} & = \left (
+		\nu_{U} \sum_{(i, f) \in E_{U}} \frac{1}{T_{Ui}}
+	\right ) ^{-1} \sum_{(i, f) \in E_{U}} \frac{1}{T_{Ui}} \nu_{Uif} \Lambda_{Uif} \\
+	& = \frac{1}{\nu_{U} N} \sum_{(i, f) \in E_{U}} \frac{1}{T_{Ui}} \nu_{Uif} \Lambda_{Uif} \\
+\end{align}
+\]
+The last equation is utilized for updates in M-step.
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

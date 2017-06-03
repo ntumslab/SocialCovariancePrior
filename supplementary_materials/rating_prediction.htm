@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Rating Prediction</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\tr}{\text{tr}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	Rating Prediction \( \hat{R} \)
+</h1>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to take the derivative of the lower bound \( L \) of \( \log p(R | \theta) \) in terms of parameters \( R_{ij} \).
+Our model SCP predicts unobserved ratigns using the close-form solution.
+</p>
+
+<hr>
+
+<h2>Derivation of \( R_{ij} \)</h2>
+
+<p>
+Let \( L \) be the function of \( R_{ij} \).
+Note that \( \E \) follows distribution \( q(Z | \theta') \).
+\[
+\begin{align}
+	L(R_{ij}) & = \E [ p(R, Z | \theta) ] + C_{0} \\
+	& = \E \left [
+		- \frac{1}{2 \sigma_{R}^{2}} \left (
+			R_{ij} - U_{i}^{T} V_{j} 
+		\right ) ^{2}
+	\right ] + C_{1} \\
+	& = - \frac{1}{2 \sigma_{R}^{2}} \left (
+		R_{ij}^{2} - 2 R_{ij} \E ( U_{i}^{T} V_{j} )
+	\right ) + C_{2} \\
+	& = - \frac{1}{2 \sigma_{R}^{2}} \left (
+		R_{ij}^{2} - 2 R_{ij} \lambda_{Ui}^{T} \lambda_{Vj} 
+	\right ) + C_{3} \\
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( R_{ij} \).
+Then we take the derivative and let it be 0.
+\[
+\begin{align}
+	\frac{\partial L}{\partial R_{ij}} & = - \frac{1}{2 \sigma_{R}^{2}} \left (
+		2 R_{ij} - 2 \lambda_{Ui}^{T} \lambda_{Vj}
+	\right ) \\
+	& = 0 \\
+	\implies R_{ij} & = \lambda_{Ui}^{T} \lambda_{Vj} \\
+	& = \hat{R}_{ij}
+\end{align}
+\]
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

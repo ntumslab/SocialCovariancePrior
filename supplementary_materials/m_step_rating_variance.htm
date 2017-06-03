@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Rating variance</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\tr}{\text{tr}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	\( \sigma_{R}^{2} \) for ratings
+</h1>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to take the derivative of the lower bound \( L \) of \( \log p(R | \theta) \) in terms of parameters \( \sigma_{R}^{2} \).
+M-step updates \( \sigma_{R}^{2} \) using its close-form solutions.
+</p>
+
+<hr>
+
+<h2>Expectations in mean-field approximation</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\E \left [ U_{i}^{T} V_{j} \right ] & = \lambda_{Ui}^{T} \lambda_{Vj} \\
+	\E \left [ ( U_{i}^{T} V_{j} ) ^{2} \right ] & = \E \left [ U_{i}^{T} V_{j} V_{j}^{T} U_{i} \right ] \\
+	& = \E \left [ 
+		\lambda_{Ui}^{T} \left ( V_{j} V_{j}^{T} \right ) \lambda_{Ui} + \tr \left ( \gamma_{Ui} (V_{j} V_{j}^{T}) \right )
+	\right ] \\
+	& = \E \left [ 
+		\lambda_{Ui}^{T} \left ( V_{j} V_{j}^{T} \right ) \lambda_{Ui} + \tr \left ( V_{j}^{T} \gamma_{Ui} V_{j} \right )
+	\right ] \\
+	& = \lambda_{Ui}^{T} \E \left ( V_{j} V_{j}^{T} \right ) \lambda_{Ui} + \tr \left [ \E \left ( V_{j}^{T} \gamma_{Ui} V_{j} \right ) \right ] \\
+	& = \lambda_{Ui}^{T} \left ( \lambda_{Vj} \lambda_{Vj}^{T} + \gamma_{Vj} \right ) \lambda_{Ui}
+	+ \tr \left [ \lambda_{Vj}^{T} \gamma_{Ui} \lambda_{Vj} + \tr \left ( \gamma_{Vj} \gamma_{Ui} \right ) \right ] \\
+	& = \lambda_{Ui}^{T} \lambda_{Vj} \lambda_{Vj}^{T} \lambda_{Ui} + \lambda_{Ui}^{T} \gamma_{Vj} \lambda_{Ui}
+	+ \lambda_{Vj}^{T} \gamma_{Ui} \lambda_{Vj} + \tr \left ( \gamma_{Vj} \gamma_{Ui} \right ) \\
+	& = \left ( \lambda_{Ui}^{T} \lambda_{Vj} \right ) ^{2} + \lambda_{Ui}^{T} \gamma_{Vj} \lambda_{Ui}
+	+ \lambda_{Vj}^{T} \gamma_{Ui} \lambda_{Vj} + \tr \left ( \gamma_{Ui} \gamma_{Vj} \right ) \\
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Derivation of \( \sigma_{R}^{2} \)</h2>
+
+<p>
+Let \( L \) be the function of \( \sigma_{R}^{2} \).
+Note that \( \E \) follows distribution \( q(Z | \theta') \).
+\[
+\begin{align}
+	L(\sigma_{R}^{2}) & = \E [ p(R, Z | \theta) ] + C_{0} \\
+	& = \E \left \{
+		- \frac{1}{2} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left [
+			( R_{ij} - U_{i}^{T} V_{j} ) ^{2} (\sigma_{R}^{2})^{-1}
+			+ \log \sigma_{R}^{2}
+		\right ] 
+	\right \} + C_{1} \\
+	& = - \frac{1}{2} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left \{
+		\left [
+			R_{ij} - 2 R_{ij} \E \left ( U_{i}^{T} V_{j} \right ) + \E \left ( (U_{i}^{T} V_{j}) ^{2} \right )
+		\right ] (\sigma_{R}^{2})^{-1}
+		+ \log \sigma_{R}^{2}
+	\right \} + C_{2} \\
+	& = - \frac{1}{2} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left \{
+		\left [
+			R_{ij} - 2 R_{ij} \lambda_{Ui}^{T} \lambda_{Vj} + \left ( \lambda_{Ui}^{T} \lambda_{Vj} \right ) ^{2} 
+			+ \lambda_{Ui}^{T} \gamma_{Vj} \lambda_{Ui} + \lambda_{Vj}^{T} \gamma_{Ui} \lambda_{Vj} + \tr \left ( \gamma_{Ui} \gamma_{Vj} \right )
+		\right ] (\sigma_{R}^{2})^{-1}
+		+ \log \sigma_{R}^{2}
+	\right \} + C_{3} \\
+	& = - \frac{1}{2} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left [
+		\alpha_{ij} (\sigma_{R}^{2})^{-1}
+		+ \log \sigma_{R}^{2}
+	\right ] + C_{4} \\
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( \sigma_{R}^{2} \).
+\( \alpha_{ij} \) represents the coefficient of \( (\sigma_{R}^{2})^{-1} \).
+Then we take the derivative and let it be 0.
+\[
+\begin{align}
+	\frac{\partial L}{\partial \sigma_{R}^{2}} & = - \frac{1}{2} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left [
+		- \alpha_{ij} (\sigma_{R}^{2})^{-2}
+		+ (\sigma_{R}^{2})^{-1}
+	\right ] \\
+	& = 0 \\
+	\implies \sigma_{R}^{2} & = \left (
+		\sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij}
+	\right ) ^{-1} \left (
+		\sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \alpha_{ij}
+	\right ) \\
+	& = \frac{1}{| R |} \sum_{i = 1}^{N} \sum_{j = 1}^{M} \delta_{ij} \left [
+		R_{ij} - 2 R_{ij} \lambda_{Ui}^{T} \lambda_{Vj} + \left ( \lambda_{Ui}^{T} \lambda_{Vj} \right ) ^{2} 
+		+ \lambda_{Ui}^{T} \gamma_{Vj} \lambda_{Ui} + \lambda_{Vj}^{T} \gamma_{Ui} \lambda_{Vj} + \tr \left ( \gamma_{Ui} \gamma_{Vj} \right )
+	\right ] \\
+\end{align}
+\]
+The last equation is utilized for updates in M-step.
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

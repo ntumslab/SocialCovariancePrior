@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Similarity matrix</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\W}{\mathcal{W}}
+	\DeclareMathOperator{\tr}{\text{tr}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	\( \Lambda_{U}, \Lambda_{V} \) for similarity matrix
+</h1>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to extend \( \log q(S_{Uif} | \theta') = \E_{- q(S_{Uif} | \theta')} \left [ \log p(R, Z | \theta) \right ] + C_{0} \) for similarity matrix \( S_{Uif} \) between user \( i \) and his or her friend \( f \).
+Using conjugate priors, we already know that posterior \( q(S_{Uif} | \theta') \) follows the same distribution as the prior of \( S_{Uif} \) (Wishart prior).
+That is, \( q(S_{Uif} | \theta') \) follows Wishart distribution of degrees of freedom \( \nu_{Uif} \) and scale matrix \( \Lambda_{Uif} \).
+</p>
+
+<p>
+We omit the derivation of \( \Lambda_{V} \) due to similar inference ways.
+</p>
+
+<hr>
+
+<h2>Matrix operators: trace and determinant</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\tr(x) & = x & \text{ if } x \text{ is a scalar} \\
+	\tr(XYZ) & = \tr(YZX) & \\
+		& = \tr(ZXY) & \\
+	\tr(X + Y) & = \tr(X) + \tr(Y) & \\
+	\log |X^{-1}| & = \log |X|^{-1} & \\
+		& = - \log |X| &
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Expectations in mean-field approximation</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\E \left [
+		(U_{i} - U_{f}) (U_{i} - U_{f})^{T}
+	\right ]
+	& = \E \left [
+		U_{i} U_{i}^{T} - U_{i} U_{f}^{T} - U_{f} U_{i}^{T} + U_{f} U_{f}^{T}
+	\right ] \\
+	& = \E \left [ U_{i} U_{i}^{T} \right ]
+	- \E \left [ U_{i} U_{f}^{T} \right ] 
+	- \E \left [ U_{f} U_{i}^{T} \right ]
+	+ \E \left [ U_{f} U_{f}^{T} \right ] \\
+	& = \left ( \lambda_{Ui} \lambda_{Ui}^{T} + \gamma_{Ui} \right )
+	+ \left ( \lambda_{Ui} \lambda_{Uf}^{T} \right )
+	+ \left ( \lambda_{Uf} \lambda_{Ui}^{T} \right )
+	+ \left ( \lambda_{Uf} \lambda_{Uf}^{T} + \gamma_{Uf} \right ) \\
+	& = (\lambda_{Ui} - \lambda_{Uf}) (\lambda_{Ui} - \lambda_{Uf})^{T} + \gamma_{Ui} + \gamma_{Uf} \\
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Derivation of \( \Lambda_{Uif} \)</h2>
+
+<p>
+\( \E \) follows distribution \( -q(S_{Uif} | \theta') \).
+\[
+\begin{align}
+	\log q(S_{Uif} | \theta') & = \E \left [ \log p(R, Z | \theta) \right ] + C_{0} \\
+	& = \frac{b_{U}}{T_{Ui}} \E \left \{
+		- \frac{1}{2} \left [
+			(U_{i} - U_{f})^{T} S_{Uif} (U_{i} - U_{f})
+			+ \log | S_{Uif}^{-1} |
+		\right ]
+		+ \left [
+			- \frac{1}{2} \tr \left ( \Lambda_{U}^{-1} S_{Uif} \right )
+			+ \frac{\nu_{U} - K - 1}{2} \log | S_{Uif} |
+			- \frac{\nu_{U}}{2} \log | \Lambda_{U} |
+		\right ]
+	\right \} + C_{1} \\
+	& = \frac{b_{U}}{T_{Ui}} \E \left \{
+		- \frac{1}{2} \tr \left [ (U_{i} - U_{f})^{T} S_{Uif} (U_{i} - U_{f}) \right ]
+		+ \frac{1}{2} \log | S_{Uif} |
+		- \frac{1}{2} \tr \left ( \Lambda_{U}^{-1} S_{Uif} \right )
+		+ \frac{\nu_{U} - K - 1}{2} \log | S_{Uif} |
+	\right \} + C_{2} \\
+	& = \frac{b_{U}}{T_{Ui}} \E \left \{
+		- \frac{1}{2} \tr \left [ 
+			\left ( 
+				(U_{i} - U_{f}) (U_{i} - U_{f})^{T} + \Lambda_{U}^{-1} 
+			\right ) S_{Uif} 
+		\right ]
+		+ \frac{(\nu_{U} + 1) - K - 1}{2} \log | S_{Uif} |
+	\right \} + C_{3} \\
+	& = \frac{b_{U}}{T_{Ui}} \left \{
+		- \frac{1}{2} \tr \left \{
+			\left [ 
+				\E \left ( 
+					(U_{i} - U_{f}) (U_{i} - U_{f})^{T} 
+				\right ) + \Lambda_{U}^{-1} 
+			\right ] S_{Uif} 
+		\right \}
+		+ \frac{(\nu_{U} + 1) - K - 1}{2} \log | S_{Uif} |
+	\right \} + C_{4} \\
+	& = \frac{b_{U}}{T_{Ui}} \left \{
+		- \frac{1}{2} \tr \left \{
+			\left [ 
+				(\lambda_{Ui} - \lambda_{Uf}) (\lambda_{Ui} - \lambda_{Uf})^{T} + \gamma_{Ui} + \gamma_{Uf} + \Lambda_{U}^{-1} 
+			\right ] S_{Uif} 
+		\right \}
+		+ \frac{(\nu_{U} + 1) - K - 1}{2} \log | S_{Uif} |
+	\right \} + C_{5} \\
+	& = \frac{b_{U}}{T_{Ui}} \left \{
+		- \frac{1}{2} \tr \left \{
+			\Lambda_{Uif}^{-1} S_{Uif} 
+		\right \}
+		+ \frac{\nu_{Uif} - K - 1}{2} \log | S_{Uif} |
+	\right \} + C_{6} \\
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( S_{Uif} \). Thus we use the following equations in E-step:
+\[
+\begin{align}
+	\nu_{Uif} & = \nu_{U} + 1 \\
+	\Lambda_{Uif} & = \left [
+		(\lambda_{Ui} - \lambda_{Uf}) (\lambda_{Ui} - \lambda_{Uf})^{T} + \gamma_{Ui} + \gamma_{Uf} + \Lambda_{U}^{-1} 
+	\right ] ^{-1} \\
+\end{align}
+\]
+Note that in our proposed model, model parameter \( \nu_{U} \) always remains a fixed value \( K \).
+Therefore, variational parameter \( \nu_{Uif} = K + 1 \) fixed.
+</p>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 

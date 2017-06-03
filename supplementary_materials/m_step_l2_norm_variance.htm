@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>l2 norm variance</title>
+<script type="text/javascript" async
+  src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-MML-AM_CHTML">
+</script>
+<meta name="robots" content="noindex, nofollow">
+
+</head>
+<body>
+
+<div style = "display: none;">
+\(
+	\DeclareMathOperator{\E}{\mathbb{E}}
+	\DeclareMathOperator{\tr}{\text{tr}}
+\)
+</div>
+
+<a href = "index.htm">Back to homepage</a>
+
+<h1>
+	\( \sigma_{U}^{2}, \sigma_{V}^{2} \) for \( l2 \) -norm regularization
+</h1>
+
+<hr>
+
+<h2>Summary</h2>
+
+<p>
+We would like to take the derivative of the lower bound \( L \) of \( \log p(R | \theta) \) in terms of parameters \( \sigma_{U}^{2}, \sigma_{V}^{2} \).
+M-step updates \( \sigma_{U}^{2}, \sigma_{V}^{2} \) using their close-form solutions.
+</p>
+
+<p>
+We omit the derivation of \( \sigma_{V}^{2} \) due to similar inference ways.
+</p>
+
+<hr>
+
+<h2>Expectations in mean-field approximation</h2>
+
+<p>
+The equations can refer to Matrix Cookbook.
+\[
+\begin{align}
+	\E \left [
+		\| U_{i} \| _{2}^{2}
+	\right ] & = \E \left [
+		U_{i}^{T} U_{i}
+	\right ] \\
+	& = \lambda_{Ui}^{T} \lambda_{Ui} + \tr( \gamma_{Ui} ) \\
+	& = \| \lambda_{Ui} \| _{2}^{2} + \tr( \gamma_{Ui} )
+\end{align}
+\]
+</p>
+
+<hr>
+
+<h2>Derivation of \( \sigma_{U}^{2} \)</h2>
+
+<p>
+Let \( L \) be the function of \( \sigma_{U}^{2} \).
+Note that \( \E \) follows distribution \( q(Z | \theta') \).
+\[
+\begin{align}
+	L(\sigma_{U}^{2}) & = \E [ p(R, Z | \theta) ] + C_{0} \\
+	& = \E \left [
+		- \frac{1}{2} \sum_{i = 1}^{N} \left (
+			U_{i}^{T} (\sigma_{U}^{2})^{-1} I U_{i}
+			+ \log | \sigma_{U}^{2} I |
+		\right )
+	\right ] + C_{1} \\
+	& = \E \left [
+		- \frac{1}{2} \sum_{i = 1}^{N} \left (
+			\| U_{i} \| _{2}^{2} (\sigma_{U}^{2})^{-1} 
+			+ \log (\sigma_{U}^{2})^{K}
+		\right )
+	\right ] + C_{2} \\
+	& = - \frac{1}{2} \sum_{i = 1}^{N} \left [
+		\left (
+			\| \lambda_{Ui} \| _{2}^{2} + \tr( \gamma_{Ui} )
+		\right ) (\sigma_{U}^{2})^{-1} + K \log \sigma_{U}^{2}
+	\right ] + C_{3} \\
+\end{align}
+\]
+All \( C \) absorb terms that are not relevant to \( \sigma_{U}^{2} \).
+Then we take the derivative and let it be 0.
+\[
+\begin{align}
+\frac{\partial L}{\partial \sigma_{U}^{2}} & = - \frac{1}{2} \sum_{i = 1}^{N} \left [
+	- \left (
+		\| \lambda_{Ui} \| _{2}^{2} + \tr( \gamma_{Ui} )
+	\right ) (\sigma_{U}^{2})^{-2} + K (\sigma_{U}^{2})^{-1}
+	\right ] \\
+	& = 0 \\
+	\implies \sigma_{U}^{2} & = \frac{1}{K N} \sum_{i = 1}^{N} \left [
+		\| \lambda_{Ui} \| _{2}^{2} + \tr( \gamma_{Ui} )
+	\right ]
+\end{align}
+\]
+The last equation is utilized for updates in M-step.
+</p>
+
+<hr>
+
+<a href = "index.htm">Back to homepage</a>
+
+</body>
+</html> 
