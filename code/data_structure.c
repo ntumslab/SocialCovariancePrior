@@ -25,7 +25,21 @@ int randomSampleInteger(int lowerBound, int upperBound){
 	}while(uniform == 1.0);
 	return (int)(lowerBound + uniform * (upperBound - lowerBound + 1));
 }
+
+double randomSampleStandardNormalVariable(){
+	double sum = 0;
+	for(int i = 0; i < 12; i ++){
+		sum += randomSampleStardardUniformVariable();
+	}
+	return sum - 6;
+}
+
+double randomSampleNormalVariable(double mean, double standardDeviation){
+	return mean + standardDeviation * randomSampleStandardNormalVariable();
+}
+
 //==============================================================================================
+
 int dictCompareAscendingKeys(const void *a, const void *b){
 	Dict p = *(Dict*)a;
 	Dict q = *(Dict*)b;
@@ -39,6 +53,75 @@ int dictCompareAscendingKeys(const void *a, const void *b){
 	return 0;
 }
 
+double dictVectorCalculateValueMean(Dict *vector, int length){
+	double mean = 0.0;
+	for(int i = 0; i < length; i ++){
+		mean += vector[i].value;
+	}
+	mean /= length;
+	return mean;
+}
+
+// The two vectors should be sorted by keys
+double dictVectorCalculatePearsonCorrelationCoefficient(Dict* vector1, Dict* vector2, int length1, int length2, int intersectionLowerBound){
+	double covariance = 0.0;
+	double norm1 = 0.0;
+	double norm2 = 0.0;
+	int intersectionCount = 0;
+
+	double mean1 = dictVectorCalculateValueMean(vector1, length1);
+	double mean2 = dictVectorCalculateValueMean(vector2, length2);
+
+	for(int a = 0, b = 0; a < length1 && b < length2; ){
+		if(vector1[a].key == vector2[b].key){
+			double error1 = vector1[a].value - mean1;
+			double error2 = vector2[b].value - mean2;
+
+			covariance += error1 * error2;
+			norm1 += error1 * error1;
+			norm2 += error2 * error2;
+
+			a += 1;
+			b += 1;
+			intersectionCount += 1;
+		}
+		else if(vector1[a].key < vector2[b].key){
+			a += 1;
+		}
+		else{
+			b += 1;
+		}
+	}
+
+	return (intersectionCount > 0 && norm1 > 0.0 && norm2 > 0.0 && intersectionCount >= intersectionLowerBound)
+		? covariance / (sqrt(norm1) * sqrt(norm2)) : 0.0;
+}
+
+// The two vectors should be sorted by keys
+double dictVectorCalculateJaccardCoefficient(Dict *vector1, Dict *vector2, int length1, int length2){
+	int intersectionCount = 0;
+
+	for(int a = 0, b = 0; a < length1 && b < length2; ){
+		if(vector1[a].key == vector2[b].key){
+			intersectionCount += 1;
+			a += 1;
+			b += 1;
+		}
+		else if(vector1[a].key < vector2[b].key){
+			a += 1;
+		}
+		else{
+			b += 1;
+		}
+	}
+
+	int unionCount = length1 + length2 - intersectionCount;
+
+	return (unionCount > 0)? (double)intersectionCount / unionCount: 0.0;	
+}
+
+//==============================================================================================
+
 double vectorCalculateDotProduct(double *vector1, double *vector2, int length){
 	double dotProduct = 0.0;
 	for(int d = 0; d < length; d ++){
@@ -46,40 +129,106 @@ double vectorCalculateDotProduct(double *vector1, double *vector2, int length){
 	}
 	return dotProduct;
 }
+
+double vectorCalculateMean(double *vector, int length){
+	double mean = 0.0;
+	for(int d = 0; d < length; d ++){
+		mean += vector[d];
+	}
+	mean /= length;
+	return mean;
+}
+
+double vectorCalculateCovariance(double *vector1, double *vector2, int length, double mean1, double mean2){
+	double covariance = 0.0;
+	for(int d = 0; d < length; d ++){
+		double bias1 = vector1[d] - mean1;
+		double bias2 = vector2[d] - mean2;
+
+		covariance += bias1 * bias2;
+	}
+	covariance /= length;
+	return covariance;
+}
+
+double vectorCalculateCorrelationCoefficient(double *vector1, double *vector2, int length){
+	double mean1 = vectorCalculateMean(vector1, length);
+	double mean2 = vectorCalculateMean(vector2, length);
+	double covariance = vectorCalculateCovariance(vector1, vector2, length, mean1, mean2);
+	double norm1 = vectorCalculateCovariance(vector1, vector1, length, mean1, mean1);
+	double norm2 = vectorCalculateCovariance(vector2, vector2, length, mean2, mean2);
+	double correlationCoefficient = (norm1 > 0 && norm2 > 0) ? covariance / (sqrt(norm1) * sqrt(norm2)) : 0.0;	
+	return correlationCoefficient;
+}
+
+double vectorCalculateEuclideanDistanceSquare(double *vector1, double *vector2, int length){
+	double distance = 0.0;
+	for(int d = 0; d < length; d ++){
+		double difference = vector1[d] - vector2[d];
+		distance += difference * difference;
+	}
+	return distance;
+}
+
+// Algorithm: Euclidean algorithm
+void vectorRunElimination(double *vector1, double *vector2, int length, int factorIndex){
+	if(abs(vector1[factorIndex]) < abs(vector2[factorIndex])){
+		for(int d = 0; d < length; d ++){
+			double temp = vector1[d];
+			vector1[d] = vector2[d];
+			vector2[d] = temp;
+		}
+	}
+
+	if(vector2[factorIndex] != 0){
+		double factor = vector1[factorIndex] / vector2[factorIndex];
+		for(int d = 0; d < length; d ++){
+			vector1[d] -= vector2[d] * factor; 
+		}
+	
+		for(int d = 0; d < length; d ++){
+			double temp = vector1[d];
+			vector1[d] = vector2[d];
+			vector2[d] = temp;
+		}
+	}
+}
+
 //==============================================================================================
+
 void listInitialize(List *list, int rowCount){
 	list -> rowCount = rowCount;
 	list -> columnCounts = (int*)malloc(sizeof(int) * rowCount);
-	list -> entries = (Dict**)malloc(sizeof(Dict*) * rowCount);
+	list -> entry = (Dict**)malloc(sizeof(Dict*) * rowCount);
 	for(int row = 0; row < rowCount; row ++){
 		list -> columnCounts[row] = 0;
-		list -> entries[row] = (Dict*)malloc(sizeof(Dict));
+		list -> entry[row] = (Dict*)malloc(sizeof(Dict));
 	}
 }
 
 void listReleaseSpace(List *list){
 	for(int row = 0; row < list -> rowCount; row ++){
-		free(list -> entries[row]);
+		free(list -> entry[row]);
 	}
-	free(list -> entries);
+	free(list -> entry);
 	free(list -> columnCounts);
-	list -> entries = NULL;
+	list -> entry = NULL;
 	list -> columnCounts = NULL;
 }
 
 void listAddEntry(List *list, int row, int column, double value){
 	int columnCount = list -> columnCounts[row];
-	list -> entries[row] = (Dict*)realloc(list -> entries[row], sizeof(Dict) * (columnCount + 1));
-	list -> entries[row][columnCount].key = column;
-	list -> entries[row][columnCount].value = value;
+	list -> entry[row] = (Dict*)realloc(list -> entry[row], sizeof(Dict) * (columnCount + 1));
+	list -> entry[row][columnCount].key = column;
+	list -> entry[row][columnCount].value = value;
 	list -> columnCounts[row] += 1;
 }
 
-void listCopyEntries(List *source, List *target){
+void listCopy(List *source, List *target){
 	for(int row = 0; row < source -> rowCount; row ++){
 		for(int j = 0; j < source -> columnCounts[row]; j ++){
-			int column = source -> entries[row][j].key;
-			double value = source -> entries[row][j].value;
+			int column = source -> entry[row][j].key;
+			double value = source -> entry[row][j].value;
 			listAddEntry(target, row, column, value);
 		}
 	}
@@ -87,8 +236,24 @@ void listCopyEntries(List *source, List *target){
 
 void listSortRows(List *list){
 	for(int row = 0; row < list -> rowCount; row ++){
-		qsort(list -> entries[row], list -> columnCounts[row], sizeof(Dict), dictCompareAscendingKeys);
+		qsort(list -> entry[row], list -> columnCounts[row], sizeof(Dict), dictCompareAscendingKeys);
 	}
+}
+
+void listNormalizeRows(List *list){
+	for(int row = 0; row < list -> rowCount; row ++){
+		double valueSum = 0.0;
+
+		for(int j = 0; j < list -> columnCounts[row]; j ++){
+			valueSum += list -> entry[row][j].value;
+		}
+		
+		if(valueSum != 0.0){
+			for(int j = 0; j < list -> columnCounts[row]; j ++){
+				list -> entry[row][j].value /= valueSum;
+			}
+		}
+	}	
 }
 
 int listCountEntries(List *list){
@@ -99,88 +264,18 @@ int listCountEntries(List *list){
 	return entryCount;
 }
 
-// returns a row vector sorted by keys (column index)
-void listGetRowVector(List *list, int row, Dict **vectorPointer, int *vectorLength){
-	*vectorLength = list -> columnCounts[row];
-	*vectorPointer = (Dict*)realloc(*vectorPointer, sizeof(Dict) * list -> columnCounts[row]);
-
-	for(int j = 0; j < list -> columnCounts[row]; j ++){
-		(*vectorPointer)[j] = list -> entries[row][j];
-	}
-
-	qsort(*vectorPointer, *vectorLength, sizeof(Dict), dictCompareAscendingKeys);
-}
-
-// returns a column vectors sorted by keys (row index)
-void listGetColumnVector(List *list, int column, Dict **vectorPointer, int *vectorLength){
-	*vectorLength = 0;
-	for(int row = 0; row < list -> rowCount; row ++){
-		for(int j = 0; j < list -> columnCounts[row]; j ++){
-			if(list -> entries[row][j].key == column){
-				*vectorPointer = (Dict*)realloc(*vectorPointer, sizeof(Dict) * (*vectorLength + 1));
-				(*vectorPointer)[*vectorLength].key = row;
-				(*vectorPointer)[*vectorLength].value = list -> entries[row][j].value;
-				*vectorLength += 1;
-				break;
-			}
-		}
-	}
-}
-
-// rowVectors should contain at least the number of rows that list contains
-void listGetAllRowVectors(List *list, List *rowVectors){
-	for(int row = 0; row < list -> rowCount; row ++){
-		rowVectors -> entries[row] = (Dict*)realloc(rowVectors -> entries[row], sizeof(Dict) * (list -> columnCounts[row]));
-		rowVectors -> columnCounts[row] = list -> columnCounts[row];
-
-		for(int j = 0; j < list -> columnCounts[row]; j ++){
-			rowVectors -> entries[row][j].key = list -> entries[row][j].key;
-			rowVectors -> entries[row][j].value = list -> entries[row][j].value;
-		}
-		qsort(rowVectors -> entries[row], rowVectors -> columnCounts[row], sizeof(Dict), dictCompareAscendingKeys);
-	}
-}
-
 // columnVectors should contain at least the number of columns that list contains
-void listGetAllColumnVectors(List *list, List *columnVectors){
-	for(int row = 0; row < columnVectors -> rowCount; row ++){
-		columnVectors -> columnCounts[row] = 0;
+void listGetReverseList(List *list, List *reverseList){
+	for(int row = 0; row < reverseList -> rowCount; row ++){
+		reverseList -> columnCounts[row] = 0;
 	}
+	
 	for(int row = 0; row < list -> rowCount; row ++){
 		for(int j = 0; j < list -> columnCounts[row]; j ++){
-			int column = list -> entries[row][j].key;
-			double value = list -> entries[row][j].value;
+			int column = list -> entry[row][j].key;
+			double value = list -> entry[row][j].value;
 
-			int count = columnVectors -> columnCounts[column];
-			columnVectors -> entries[column] = (Dict*)realloc(columnVectors -> entries[column], sizeof(Dict) * (count + 1));
-			columnVectors -> entries[column][count].key = row;
-			columnVectors -> entries[column][count].value = value;
-			columnVectors -> columnCounts[column] += 1;
-		}
-	}
-	for(int row = 0; row < columnVectors -> rowCount; row ++){
-		qsort(columnVectors -> entries[row], columnVectors -> columnCounts[row], sizeof(Dict), dictCompareAscendingKeys);
-	}
-}
-
-// The size of array entryCount should be at least the number of rows of the list
-void listCountRowEntries(List *list, int *entryCounts){
-	for(int row = 0; row < list -> rowCount; row ++){
-		entryCounts[row] = list -> columnCounts[row];
-	}
-}
-
-// The size of array entryCount should be at least the number of columns of the list
-void listCountColumnEntries(List *list, int *entryCounts, int columnCount){
-	for(int column = 0; column < columnCount; column ++){
-		entryCounts[column] = 0;
-	}
-
-	for(int row = 0; row < list -> rowCount; row ++){
-		for(int j = 0; j < list -> columnCounts[row]; j ++){
-			int column = list -> entries[row][j].key;
-
-			entryCounts[column] += 1;
+			listAddEntry(reverseList, column, row, value);
 		}
 	}
 }
@@ -188,19 +283,21 @@ void listCountColumnEntries(List *list, int *entryCounts, int columnCount){
 void listPrint(List *list, FILE *outputStream){
 	for(int row = 0; row < list -> rowCount; row ++){
 		for(int j = 0; j < list -> columnCounts[row]; j ++){
-			int column = list -> entries[row][j].key;
-			double value = list -> entries[row][j].value;
+			int column = list -> entry[row][j].key;
+			double value = list -> entry[row][j].value;
 			fprintf(outputStream, "%d\t%d\t%.10f\n", row, column, value);
 		}
 	}
 }
 
-void listScan(FILE *inputStream, List *list){
+void listScan(List *list, FILE *inputStream){
 	int row, column;
 	double value;
-	char line[10000];
-	while(fgets(line, 10000, inputStream) != NULL){
+	char line[BUFFER_SIZE];
+
+	while(fgets(line, BUFFER_SIZE, inputStream) != NULL){
 		int readValueCount = sscanf(line, "%d%d%lf", &row, &column, &value);
+		
 		switch(readValueCount){
 			case 3:
 				listAddEntry(list, row, column, value);
@@ -211,29 +308,54 @@ void listScan(FILE *inputStream, List *list){
 		}
 	}
 }
+
+void listCopyFromArray(List *list, Array *array, bool key1_2){
+	for(int a = 0; a < array -> length; a ++){
+		int key1 = array -> entry[a].key1;
+		int key2 = array -> entry[a].key2;
+		double value = array -> entry[a].value;
+
+		if(key1_2){
+			listAddEntry(list, key1, key2, value);
+		}
+		else{
+			listAddEntry(list, key2, key1, value);
+		}
+	}
+}
+
 //==============================================================================================
+
 void matrixInitialize(Matrix *matrix, int rowCount, int columnCount){
 	matrix -> rowCount = rowCount;
 	matrix -> columnCount = columnCount;
-	matrix -> entries = (double**)malloc(sizeof(double*) * rowCount);
+	matrix -> entry = (double**)malloc(sizeof(double*) * rowCount);
 	for(int row = 0; row < rowCount; row ++){
-		matrix -> entries[row] = (double*)malloc(sizeof(double) * columnCount);
+		matrix -> entry[row] = (double*)malloc(sizeof(double) * columnCount);
 	}	
 }
 
 void matrixReleaseSpace(Matrix *matrix){
 	for(int row = 0; row < matrix -> rowCount; row ++){
-		free(matrix -> entries[row]);
+		free(matrix -> entry[row]);
 	}
-	free(matrix -> entries);
-	matrix -> entries = NULL;
+	free(matrix -> entry);
+	matrix -> entry = NULL;
 }
 
-void matrixAssignRandomValues(Matrix *matrix, double minValue, double maxValue){
+void matrixSetRandomValues(Matrix *matrix, double minValue, double maxValue){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
 			double uniform = (double)rand() / RAND_MAX;
-			matrix -> entries[row][column] = minValue + (maxValue - minValue) * uniform;
+			matrix -> entry[row][column] = minValue + (maxValue - minValue) * uniform;
+		}
+	}
+}
+
+void matrixSetNormallyRandomValues(Matrix *matrix, double mean, double standardDeviation){
+	for(int row = 0; row < matrix -> rowCount; row ++){
+		for(int column = 0; column < matrix -> columnCount; column ++){
+			matrix -> entry[row][column] = randomSampleNormalVariable(mean, standardDeviation);
 		}
 	}
 }
@@ -241,7 +363,7 @@ void matrixAssignRandomValues(Matrix *matrix, double minValue, double maxValue){
 void matrixCopyEntries(Matrix *source, Matrix *target){
 	for(int row = 0; row < source -> rowCount; row ++){
 		for(int column = 0; column < source -> columnCount; column ++){
-			target -> entries[row][column] = source -> entries[row][column];
+			target -> entry[row][column] = source -> entry[row][column];
 		}
 	}
 }
@@ -252,16 +374,16 @@ void matrixPrint(Matrix *matrix, FILE *outputStream){
 			if(column > 0){
 				fprintf(outputStream, "\t");
 			}
-			fprintf(outputStream, "%.10f", matrix -> entries[row][column]);
+			fprintf(outputStream, "%.10f", matrix -> entry[row][column]);
 		}
 		fprintf(outputStream, "\n");
 	}
 }
 
-void matrixScan(FILE *inputStream, Matrix *matrix){
+void matrixScan(Matrix *matrix, FILE *inputStream){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			int argumentCount = fscanf(inputStream, "%lf", &matrix -> entries[row][column]);
+			int argumentCount = fscanf(inputStream, "%lf", &matrix -> entry[row][column]);
 		}
 	}	
 }
@@ -269,16 +391,16 @@ void matrixScan(FILE *inputStream, Matrix *matrix){
 void matrixSetIdentity(Matrix *matrix){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			matrix -> entries[row][column] = 0;
+			matrix -> entry[row][column] = 0;
 		}
-		matrix -> entries[row][row] = 1;
+		matrix -> entry[row][row] = 1;
 	}
 }
 
 void matrixSetValue(Matrix *matrix, double value){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			matrix -> entries[row][column] = value;
+			matrix -> entry[row][column] = value;
 		}
 	}
 }
@@ -286,7 +408,7 @@ void matrixSetValue(Matrix *matrix, double value){
 void matrixMultiplyScalar(Matrix *matrix, double scalar){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			matrix -> entries[row][column] *= scalar;
+			matrix -> entry[row][column] *= scalar;
 		}
 	}	
 }
@@ -294,7 +416,7 @@ void matrixMultiplyScalar(Matrix *matrix, double scalar){
 void matrixAddScalar(Matrix *matrix, double scalar){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			matrix -> entries[row][column] += scalar;
+			matrix -> entry[row][column] += scalar;
 		}
 	}	
 }
@@ -304,7 +426,7 @@ double matrixCalculateSquareSum(Matrix *matrix){
 
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			double value = matrix -> entries[row][column];
+			double value = matrix -> entry[row][column];
 			squareSum += value * value;
 		}
 	}
@@ -316,7 +438,7 @@ double matrixCalculateSquareSum(Matrix *matrix){
 void matrixGetTranspose(Matrix *matrix, Matrix *transpose){
 	for(int row = 0; row < matrix -> rowCount; row ++){
 		for(int column = 0; column < matrix -> columnCount; column ++){
-			transpose -> entries[column][row] = matrix -> entries[row][column];
+			transpose -> entry[column][row] = matrix -> entry[row][column];
 		}
 	}
 }
@@ -340,22 +462,22 @@ bool matrixGetInverse(Matrix *matrix, Matrix *inverse){
 		bool nonZeroRowFound = true;
 
 		// Find a non-zero row
-		if(copiedMatrix.entries[row][row] == 0){
+		if(copiedMatrix.entry[row][row] == 0){
 			nonZeroRowFound = false;
 
 			for(int anotherRow = row + 1; anotherRow < copiedMatrix.rowCount; anotherRow ++){
-				if(copiedMatrix.entries[anotherRow][row] != 0){
+				if(copiedMatrix.entry[anotherRow][row] != 0){
 					nonZeroRowFound = true;
 					
 					for(int column = row; column < copiedMatrix.columnCount; column ++){
-						double temp1 = copiedMatrix.entries[row][column];
-						copiedMatrix.entries[row][column] = copiedMatrix.entries[anotherRow][column];
-						copiedMatrix.entries[anotherRow][column] = temp1;
+						double temp1 = copiedMatrix.entry[row][column];
+						copiedMatrix.entry[row][column] = copiedMatrix.entry[anotherRow][column];
+						copiedMatrix.entry[anotherRow][column] = temp1;
 					}
 					for(int column = 0; column < inverse -> columnCount; column ++){
-						double temp2 = inverse -> entries[row][column];
-						inverse -> entries[row][column] = inverse -> entries[anotherRow][column];
-						inverse -> entries[anotherRow][column] = temp2;
+						double temp2 = inverse -> entry[row][column];
+						inverse -> entry[row][column] = inverse -> entry[anotherRow][column];
+						inverse -> entry[anotherRow][column] = temp2;
 					}
 
 					break;
@@ -369,23 +491,23 @@ bool matrixGetInverse(Matrix *matrix, Matrix *inverse){
 		}
 		
 		// Run the elimination
-		double factorReciprocal = 1.0 / copiedMatrix.entries[row][row];
+		double factorReciprocal = 1.0 / copiedMatrix.entry[row][row];
 		for(int column = row; column < copiedMatrix.columnCount; column ++){
-			copiedMatrix.entries[row][column] *= factorReciprocal;
+			copiedMatrix.entry[row][column] *= factorReciprocal;
 		}
 		for(int column = 0; column < copiedMatrix.columnCount; column ++){
-			inverse -> entries[row][column] *= factorReciprocal;
+			inverse -> entry[row][column] *= factorReciprocal;
 		}
 
 		for(int anotherRow = 0; anotherRow < copiedMatrix.rowCount; anotherRow ++){
-			if(anotherRow != row && copiedMatrix.entries[anotherRow][row] != 0){
-				double anotherFactor = copiedMatrix.entries[anotherRow][row];
+			if(anotherRow != row && copiedMatrix.entry[anotherRow][row] != 0){
+				double anotherFactor = copiedMatrix.entry[anotherRow][row];
 
 				for(int column = row; column < copiedMatrix.columnCount; column ++){
-					copiedMatrix.entries[anotherRow][column] -= copiedMatrix.entries[row][column] * anotherFactor;
+					copiedMatrix.entry[anotherRow][column] -= copiedMatrix.entry[row][column] * anotherFactor;
 				}
 				for(int column = 0; column < inverse -> columnCount; column ++){
-					inverse -> entries[anotherRow][column] -= inverse -> entries[row][column] * anotherFactor;
+					inverse -> entry[anotherRow][column] -= inverse -> entry[row][column] * anotherFactor;
 				}	
 			}
 		}
@@ -395,43 +517,210 @@ bool matrixGetInverse(Matrix *matrix, Matrix *inverse){
 	return inverseExistent;
 }
 
-//==============================================================================================
-
-void ratingFetchUserItemCount(char *ratingFilePath, int *userCount, int *itemCount){
-	FILE *inFile = fopen(ratingFilePath, "r");
-	char line[10000];
-	int lastUser = 0;
-	int lastItem = 0;
-
-	while(fgets(line, 10000, inFile)){
-		int user, item;
-		sscanf(line, "%d%d", &user, &item);
-		if(lastUser < user){
-			lastUser = user;
-		}
-		if(lastItem < item){
-			lastItem = item;
-		}
+// Algorithm: Cholesky decomposition to avoid directly calculating matrix determinant where the overflow is likely to occur for large matrices
+// \ln \det A = 2 \sum \ln diag(L) where A = L L^T, L is the cholesky factor
+// The matrix as input should be positive-definite
+double matrixCalculatePositiveDefiniteLogDeterminant(Matrix *matrix){
+	if(matrix -> rowCount != matrix -> columnCount){
+		return 0.0;
 	}
 
-	fclose(inFile);
-	*userCount = lastUser + 1;
-	*itemCount = lastItem + 1;
+	Matrix choleskyFactor;
+	matrixInitialize(&choleskyFactor, matrix -> rowCount, matrix -> columnCount);
+	double logDeterminant = 0.0;
+	
+	// Cholesky decomposition
+	for(int row = 0; row < matrix -> rowCount; row ++){
+		for(int column = 0; column <= row; column ++){
+			double anotherFactorEntryDotProduct = vectorCalculateDotProduct(choleskyFactor.entry[row], choleskyFactor.entry[column], column);
+
+			if(row == column){
+				choleskyFactor.entry[row][column] = sqrt(matrix -> entry[row][column] - anotherFactorEntryDotProduct);
+				logDeterminant += log(choleskyFactor.entry[row][column]);
+			}
+			else{
+				choleskyFactor.entry[row][column] = (matrix -> entry[row][column] - anotherFactorEntryDotProduct) / choleskyFactor.entry[column][column];	
+			}
+		}
+	}
+	logDeterminant *= 2;
+
+	matrixReleaseSpace(&choleskyFactor);
+	return logDeterminant;
 }
 
-// User index [0, userCount - 1], item index [0, itemCount - 1];
-void ratingReadFromFile(char *ratingFilePath, List *ratings){
+//==============================================================================================
+
+void arrayInitialize(Array *array){
+	array -> length = 0;
+	array -> entry = (ArrayEntry*)malloc(sizeof(ArrayEntry));
+}
+
+void arrayReleaseSpace(Array *array){
+	free(array -> entry);
+	array -> entry = NULL;
+}
+
+void arrayAddEntry(Array *array, int key1, int key2, double value){
+	array -> entry = (ArrayEntry*)realloc(array -> entry, sizeof(ArrayEntry) * (array -> length + 1));
+	array -> entry[array -> length].key1 = key1;
+	array -> entry[array -> length].key2 = key2;
+	array -> entry[array -> length].value = value;
+	array -> length += 1;
+}
+
+void arrayCopyFromList(Array *array, List *list){
+	for(int row = 0; row < list -> rowCount; row ++){
+		for(int j = 0; j < list -> columnCounts[row]; j ++){
+			int column = list -> entry[row][j].key;
+			double value = list -> entry[row][j].value;
+
+			arrayAddEntry(array, row, column, value);
+		}
+	}
+}
+
+void arrayShuffle(Array *array){
+	for(int s = 0; s < array -> length; s ++){
+		int i = randomSampleInteger(0, array -> length - 1);
+		int j = randomSampleInteger(0, array -> length - 1);
+
+		ArrayEntry temp = array -> entry[i];
+		array -> entry[i] = array -> entry[j];
+		array -> entry[j] = temp;
+	}
+}
+
+void arrayScan(Array *array, FILE *inputStream){
+	int key1, key2;
+	double value;
+	char line[BUFFER_SIZE];
+
+	while(fgets(line, BUFFER_SIZE, inputStream) != NULL){
+		int readValueCount = sscanf(line, "%d%d%lf", &key1, &key2, &value);
+
+		switch(readValueCount){
+			case 3:
+				arrayAddEntry(array, key1, key2, value);
+				break;
+			case 2:
+				arrayAddEntry(array, key1, key2, 1);
+				break;
+		}
+	}
+}
+
+void arrayPrint(Array *array, FILE *outputStream){
+	for(int a = 0; a < array -> length; a ++){
+		int key1 = array -> entry[a].key1;
+		int key2 = array -> entry[a].key2;
+		double value = array -> entry[a].value;
+
+		fprintf(outputStream, "%d\t%d\t%.10e\n", key1, key2, value);
+	}
+}
+
+void arraySort(Array *array, int (*compare)(const void *p, const void *q)){
+	qsort(array -> entry, array -> length, sizeof(ArrayEntry), compare);
+}
+
+//==============================================================================================
+
+void ratingReadHeader(char *ratingFilePath, int *rowCount, int *columnCount){
 	FILE *inFile = fopen(ratingFilePath, "r");
-	listScan(inFile, ratings);
+
+	int status = fscanf(inFile, "%d%d", rowCount, columnCount);
+
 	fclose(inFile);
 }
 
-void ratingNormalizeByMean(List *ratings){
+void ratingReadArray(char *ratingFilePath, Array *ratingArray){
+	FILE *inFile = fopen(ratingFilePath, "r");
+	
+	// Skip the header
+	char line[BUFFER_SIZE];
+	char *status = fgets(line, BUFFER_SIZE, inFile);
+	arrayScan(ratingArray, inFile);
+
+	fclose(inFile);
+}
+
+void ratingReadList(char *ratingFilePath, List *ratingList){
+	FILE *inFile = fopen(ratingFilePath, "r");
+	
+	// Skip the header
+	char line[BUFFER_SIZE];
+	char *status = fgets(line, BUFFER_SIZE, inFile);
+	listScan(ratingList, inFile);
+
+	fclose(inFile);
+}
+
+void ratingReadMatrix(char *ratingFilePath, Matrix *ratingMatrix){
+	FILE *inFile = fopen(ratingFilePath, "r");
+	
+	// Skip the header
+	char line[BUFFER_SIZE];
+	char *status = fgets(line, BUFFER_SIZE, inFile);
+	matrixScan(ratingMatrix, inFile);
+
+	fclose(inFile);
+}
+
+void ratingWriteMatrix(char *ratingFilePath, Matrix *ratingMatrix){
+	FILE *outFile = fopen(ratingFilePath, "w");
+
+	fprintf(outFile, "%d\t%d\n", ratingMatrix -> rowCount, ratingMatrix -> columnCount);
+	matrixPrint(ratingMatrix, outFile);
+
+	fclose(outFile);
+}
+
+void ratingWriteArray(char *ratingFilePath, Array *ratingArray, int key1Count, int key2Count){
+	FILE *outFile = fopen(ratingFilePath, "w");
+
+	fprintf(outFile, "%d\t%d\n", key1Count, key2Count);
+	arrayPrint(ratingArray, outFile);
+
+	fclose(outFile);
+}
+
+void ratingWriteList(char *ratingFilePath, List *ratingList, int columnCount){
+	FILE *outFile = fopen(ratingFilePath, "w");
+
+	fprintf(outFile, "%d\t%d\n", ratingList -> rowCount, columnCount);
+	listPrint(ratingList, outFile);
+
+	fclose(outFile);
+}
+
+void ratingNormalizeArrayByMean(Array *ratingArray){
+	if(ratingArray -> length == 0){
+		return;
+	}
+
+	double mean = 0.0;
+
+	for(int a = 0; a < ratingArray -> length; a ++){
+		double rating = ratingArray -> entry[a].value;
+
+		mean += rating;
+	}
+
+	mean /= ratingArray -> length;
+
+	for(int a = 0; a < ratingArray -> length; a ++){
+		ratingArray -> entry[a].value -= mean;
+	}
+}
+
+void ratingNormalizeListByMean(List *ratingList){
 	double mean = 0;
 	int count = 0;
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			double rating = ratings -> entries[user][j].value;
+
+	for(int user = 0; user < ratingList -> rowCount; user ++){
+		for(int j = 0; j < ratingList -> columnCounts[user]; j ++){
+			double rating = ratingList -> entry[user][j].value;
 			mean += rating;
 			count += 1;
 		}
@@ -442,9 +731,61 @@ void ratingNormalizeByMean(List *ratings){
 	}
 	mean /= count;
 
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			ratings -> entries[user][j].value -= mean;
+	for(int user = 0; user < ratingList -> rowCount; user ++){
+		for(int j = 0; j < ratingList -> columnCounts[user]; j ++){
+			ratingList -> entry[user][j].value -= mean;
 		}
 	}
+}
+
+void ratingSplitArrayValidation(Array *ratingArray, Array *trainingRatingArray, Array* validationRatingArray, float validationRatio){
+	for(int a = 0; a < ratingArray -> length; a ++){
+		int user = ratingArray -> entry[a].key1;
+		int item = ratingArray -> entry[a].key2;
+		double rating = ratingArray -> entry[a].value;
+
+		double probability = randomSampleStardardUniformVariable();
+		if(probability < validationRatio){
+			arrayAddEntry(validationRatingArray, user, item, rating);
+		}
+		else{
+			arrayAddEntry(trainingRatingArray, user, item, rating);
+		}
+	}
+}
+
+void ratingSplitListValidation(List *ratingList, List *trainingRatingList, List* validationRatingList, float validationRatio){
+	for(int user = 0; user < ratingList -> rowCount; user ++){
+		for(int j = 0; j < ratingList -> columnCounts[user]; j ++){
+			int item = ratingList -> entry[user][j].key;
+			double rating = ratingList -> entry[user][j].value;
+
+			double probability = randomSampleStardardUniformVariable();
+			if(probability < validationRatio){
+				listAddEntry(validationRatingList, user, item, rating);
+			}
+			else{
+				listAddEntry(trainingRatingList, user, item, rating);
+			}
+		}
+	}
+}
+
+//==============================================================================================
+
+void optimizerInitialize(Optimizer *optimizer){
+	optimizer -> epochCount = 1000;
+	optimizer -> convergenceThreshold = 1e-4;
+	optimizer -> decay = 0.95;
+	optimizer -> conditionConstant = 1e-6;
+}
+
+double optimizerAdadeltaGetStep(Optimizer *optimizer, double gradient, double *squaredStep, double *secondMoment){
+	*secondMoment = optimizer -> decay * (*secondMoment) + (1.0 - optimizer -> decay) * gradient * gradient;
+
+	double step = sqrt((*squaredStep + optimizer -> conditionConstant) / (*secondMoment + optimizer -> conditionConstant)) * gradient;
+
+	*squaredStep = optimizer -> decay * (*squaredStep) + (1.0 - optimizer -> decay) * step * step;
+
+	return step;
 }

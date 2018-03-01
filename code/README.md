@@ -3,48 +3,68 @@
 ## Compilation (GCC for example)
 
 ```
-gcc -std=c11 -O3 -o social_covariance_prior social_covariance_prior.c data_structure.c -lm
+gcc -std=c11 -O3 -fopenmp -o social_covariance_prior social_covariance_prior.c data_structure.c -lm
 ```
 
 ## Running
 
 ```
-./social_covariance_prior rating_file K b_U b_V S_U S_V [user_social_network_file] [item_social_network_file]
+./social_covariance_prior training_rating_file user_latent_factor_file item_latent_factor_file  K b_U b_V S_U S_V [user_social_network_file] [item_social_network_file]
 ```
 
+* training_rating_file: input of rating dataset
+* user_latent_factor_file: output of vector \lambda_Ui for each user i at line i (0 indexed).
+* item_latent_factor_file: output of vector \lambda_Vj for each item j at line j (0 indexed).
 * K: number of latent factors
 * b_U: user balance parameter; the value is between 0 and 1
 * b_V: item balance parameter; the value is between 0 and 1
-* S_U: whether explicit user social network is given or not
-  * 1: [user_social_network_file] must be given a file path to import the explicit user social network
-  * 0: SCP learns the implicit user social network
-* S_V: whether explicit item social network is given or not
-  * 1: [item_social_network_file] must be given a file path to import the explicit item social network
-  * 0: SCP learns the implicit item social network
+* S_U: argument on user social network
+  * 0: learning an implicit social network where the edge weights are learned in VEM
+  * 1: reading an explicit social network where the edge weights are learned in VEM
+  * 2: learning an implicit social network where the edge weights are read from the file
+  * 3: reading an explicit social network where the edge weights are read from the file
+* S_V: argument on item social network
+  * 0: learning an implicit social network where the edge weights are learned in VEM
+  * 1: reading an explicit social network where the edge weights are learned in VEM
+  * 2: learning an implicit social network where the edge weights are read from the file
+  * 3: reading an explicit social network where the edge weights are read from the file
+* user_social_network_file: input of explicit user social network [ Optional ]
+  * The argument can be skipped if S_U = 0 or 2
+* item_social_network_file: input of explicit item social network [ Optional ]
+  * The argument can be skipped if S_V = 0 or 2
 
 ## Data format
 
 Rating file:
-* 3 values per line to represent a rating record (i, j, r):
-  * 1: integer value i (0 <= i <= N - 1): User i 
-  * 2: integer value j (0 <= j <= M - 1): Item j
-  * 3: floating-point value r: Rating of user i to item j
+* 2 values at the first line to represent (N, M):
+  * N: the number of users
+  * M: the number of items
+* After the first line, 3 values per line to represent a rating record (i, j, r):
+  * Integer i (0 <= i <= N - 1): user i 
+  * Integer j (0 <= j <= M - 1): item j
+  * Floating-point r: rating of user i to item j
 
 Explicit user social network file:
-* 2 values per line to represent a directed edge (i, f).
-  * 1: integer value i (0 <= i <= N - 1): User i
-  * 2: integer value f (0 <= f <= N - 1, f != i): User f
+* 2 values at the first line to represent (N, N):
+  * N: the number of users.
+* After the first line, 3 values per line to represent a directed edge (i, f, [w]).
+  * Integer i (0 <= i <= N - 1): user i
+  * Integer f (0 <= f <= N - 1, f != i): user f
+  * Floating-point w: weight of edge (i, f) [ Optional, default 1 if not given ]
 
 Explicit item social network file:
-* 2 values per line to represent a directed edge (j, g).
-  * 1: integer value j (0 <= j <= M - 1): Item j
-  * 2: integer value g (0 <= g <= M - 1, g != j): Item g
+* 2 values at the first line to represent (M, M):
+  * M: the number of items.
+* After the first line, 3 values per line to represent a directed edge (j, g, [w]).
+  * Integer j (0 <= j <= M - 1): item j
+  * Integer g (0 <= g <= M - 1, g != j): item g
+  * Floating-point w: weight of edge (j, g) [ Optional, default 1 if not given ]
 
 ## Comments
 
-Since the code is specifically written for our experiments, so the code
+Since the code is specifically written for our experiments on our machine,
 
-1. runs on Linux platforms only. We are not sure if it can run on Windows or other operating systems.
-1. runs only the cross validation of training data. No prediction on test data is implemented.
-1. does not handle exceptions if it reads invalid data format or invalid argument values.
-1. could be lack of readability.
+1. it is written on Linux platforms. We are not sure if the code can run on Windows or other operating systems.
+1. it does not handle exceptions when reading invalid data format or invalid argument values.
+1. it could be lack of readability.
+1. the version of GCC compiler maybe requires an upgrade for successful compilation in another platform.

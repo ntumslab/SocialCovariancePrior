@@ -4,13 +4,13 @@
 #include <math.h>
 #include <stdbool.h>
 #include <float.h>
-#include <tgmath.h>
 #include "data_structure.h"
+// #define SCP_PARALLEL_OPEN
 
-typedef struct MATRIX_FACTORIZATION{
+// Social Covariance Prior
+
+typedef struct SOCIAL_COVARIANCE_PRIOR{
 	int latentFactorCount;							// K
-	int maxIterationCount;
-	double convergenceThreshold;
 	int similaritySamplingCount;					// | F |
 	int userCount;									// N
 	int itemCount;									// M
@@ -18,24 +18,61 @@ typedef struct MATRIX_FACTORIZATION{
 	Matrix *itemFactorVariationalMeanMatrix;		// \lambda_{V} \in R^{M \times K} 
 	Matrix *userFactorVariationalVarianceMatrix;	// \gamma_{U} \in R^{N \times K}
 	Matrix *itemFactorVariationalVarianceMatrix;	// \gamma_{V} \in R^{M \times K}
-	double userBalanceParameter;					// b_{U}
-	double itemBalanceParameter;					// b_{V}
-	bool userExplicitSocialNetworkImported;
-	bool itemExplicitSocialNetworkImported;
-} MatrixFactorization;
+	double userFactorRegularizationRatio;			// 1 - b_{U}
+	double itemFactorRegularizationRatio;			// 1 - b_{V}
+	double userFriendRegularizationRatio;			// b_{U}
+	double itemFriendRegularizationRatio;			// b_{V}
+	bool userFriendImported;
+	bool itemFriendImported;
+	bool userFriendSimilarityClosed;
+	bool itemFriendSimilarityClosed;
+} SocialCovariancePrior;
 
-double matrixFactorizationEvaluateRMSE(MatrixFactorization *model, List *ratings);
+double matrixFactorizationPredict(SocialCovariancePrior *model, int user, int item){
+	return vectorCalculateDotProduct(
+			model -> userFactorVariationalMeanMatrix -> entry[user], model -> itemFactorVariationalMeanMatrix -> entry[item],
+			model -> latentFactorCount);
+}
 
-// Notation: 1 / \sigma_{U}^{2}
-double matrixFactorizationEstimateUserFactorPrecision(MatrixFactorization *model){
+double matrixFactorizationEvaluateRMSE(SocialCovariancePrior *model, List *ratingList){
+	double rmse = 0.0;
+	int count = 0;
+
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for reduction(+:rmse, count)
+#endif
+	for(int user = 0; user < ratingList -> rowCount; user ++){
+		for(int j = 0; j < ratingList -> columnCounts[user]; j ++){	
+			int item = ratingList -> entry[user][j].key;
+			double rating = ratingList -> entry[user][j].value;
+
+			double prediction = matrixFactorizationPredict(model, user, item);
+			double error = prediction - rating;
+			
+			rmse = rmse + error * error;
+			count = count + 1;
+		}
+	}
+
+	if(count > 0){
+		rmse = sqrt(rmse / count);
+	}
+	return rmse;
+}
+
+// \sigma_{U}^{-2}
+double matrixFactorizationEstimateUserFactorPrecision(SocialCovariancePrior *model){
 	double userFactorCovariance = 0;
 
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for reduction(+:userFactorCovariance)
+#endif
 	for(int user = 0; user < model -> userCount; user ++){
 		for(int k = 0; k < model -> latentFactorCount; k ++){
-			double mean = model -> userFactorVariationalMeanMatrix -> entries[user][k];
-			double variance = model -> userFactorVariationalVarianceMatrix -> entries[user][k];
+			double mean = model -> userFactorVariationalMeanMatrix -> entry[user][k];
+			double variance = model -> userFactorVariationalVarianceMatrix -> entry[user][k];
 
-			userFactorCovariance += mean * mean + variance;
+			userFactorCovariance = userFactorCovariance + mean * mean + variance;
 		}
 	}
 	userFactorCovariance /= model -> userCount * model -> latentFactorCount;
@@ -44,16 +81,19 @@ double matrixFactorizationEstimateUserFactorPrecision(MatrixFactorization *model
 	return userFactorPrecision;
 }
 
-// Notation: 1 / \sigma_{V}^{2}
-double matrixFactorizationEstimateItemFactorPrecision(MatrixFactorization *model){
+// \sigma_{V}^{-2}
+double matrixFactorizationEstimateItemFactorPrecision(SocialCovariancePrior *model){
 	double itemFactorCovariance = 0;
 
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for reduction(+:itemFactorCovariance)
+#endif
 	for(int item = 0; item < model -> itemCount; item ++){
 		for(int k = 0; k < model -> latentFactorCount; k ++){
-			double mean = model -> itemFactorVariationalMeanMatrix -> entries[item][k];
-			double variance = model -> itemFactorVariationalVarianceMatrix -> entries[item][k];
+			double mean = model -> itemFactorVariationalMeanMatrix -> entry[item][k];
+			double variance = model -> itemFactorVariationalVarianceMatrix -> entry[item][k];
 
-			itemFactorCovariance += mean * mean + variance;
+			itemFactorCovariance = itemFactorCovariance + mean * mean + variance;
 		}
 	}
 	itemFactorCovariance /= model -> itemCount * model -> latentFactorCount;
@@ -62,98 +102,114 @@ double matrixFactorizationEstimateItemFactorPrecision(MatrixFactorization *model
 	return itemFactorPrecision;
 }
 
-// Notation: 1 / \Lambda_{U}, \Lambda{Uif} in the implicit social network
-void matrixFactorizationEstimateUserSimilarityMatrix(MatrixFactorization *model, Matrix *userSimilaritySumMatrix, Matrix *userSimilarityWeightedSumMatrix, Matrix *userFactorSimilarityRateVector){
+// \Lambda_{U}^{-1} and \Lambda{Uif} for implicit user social networks
+void matrixFactorizationEstimateUserSimilarityMatrix(SocialCovariancePrior *model, Matrix *userSimilaritySumMatrix,
+		Matrix *userSimilarityWeightedSumMatrix, Matrix *userFactorSimilarityRateVector){
+
 	matrixSetValue(userSimilaritySumMatrix, 0);
 	matrixSetValue(userSimilarityWeightedSumMatrix, 0);
 
-	int userSamplingCount = (model -> similaritySamplingCount < model -> userCount - 1)? model -> similaritySamplingCount: model -> userCount - 1;
-	double userSamplingRate = (double)userSamplingCount / (model -> userCount - 1);
+	int userSamplingCount = (model -> similaritySamplingCount < model -> userCount - 1)
+		? model -> similaritySamplingCount: model -> userCount - 1;
 	Matrix userFactorSimilarityMeanVector;
 	matrixInitialize(&userFactorSimilarityMeanVector, 1, model -> latentFactorCount);
 	matrixSetValue(&userFactorSimilarityMeanVector, 0);
 	for(int user = 0; user < model -> userCount; user ++){
-		for(int friend = 0; friend < model -> userCount; friend ++){
-			if(user == friend || randomSampleStardardUniformVariable() > userSamplingRate){
-				continue;
-			}
+		for(int f = 0; f < userSamplingCount; f ++){
+			int friend;
+			do{
+				friend = randomSampleInteger(0, model -> userCount - 1);
+			}while(friend == user);
 
 			for(int k = 0; k < model -> latentFactorCount; k ++){
-				double userMean = model -> userFactorVariationalMeanMatrix -> entries[user][k];
-				double friendMean = model -> userFactorVariationalMeanMatrix -> entries[friend][k];
-				double userVariance = model -> userFactorVariationalVarianceMatrix -> entries[user][k];
-				double friendVariance = model -> userFactorVariationalVarianceMatrix -> entries[friend][k];
+				double similarity = 1.0;
+				if(model -> userFriendSimilarityClosed == false){
+					double userMean = model -> userFactorVariationalMeanMatrix -> entry[user][k];
+					double friendMean = model -> userFactorVariationalMeanMatrix -> entry[friend][k];
+					double userVariance = model -> userFactorVariationalVarianceMatrix -> entry[user][k];
+					double friendVariance = model -> userFactorVariationalVarianceMatrix -> entry[friend][k];
 
-				double similarityRate = ((userMean - friendMean) * (userMean - friendMean) + userVariance + friendVariance + userFactorSimilarityRateVector -> entries[0][k]);
-				double similarity = (model -> latentFactorCount + 1) / similarityRate;
-				double normalizedSimilarity = similarity / userSamplingCount;
+					double similarityRate = ((userMean - friendMean) * (userMean - friendMean)
+							+ userVariance + friendVariance + userFactorSimilarityRateVector -> entry[0][k]);
+					similarity = 1.0 / similarityRate;
+				}
+				double normalizedSimilarity = (model -> latentFactorCount + 1) * similarity / userSamplingCount;
 			
-				userSimilaritySumMatrix -> entries[user][k] += normalizedSimilarity;
-				userSimilaritySumMatrix -> entries[friend][k] += normalizedSimilarity;
+				userSimilaritySumMatrix -> entry[user][k] += normalizedSimilarity;
+				userSimilaritySumMatrix -> entry[friend][k] += normalizedSimilarity;
 				
-				userSimilarityWeightedSumMatrix -> entries[user][k] += 
-					normalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entries[friend][k];
-				userSimilarityWeightedSumMatrix -> entries[friend][k] += 
-					normalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entries[user][k];
+				userSimilarityWeightedSumMatrix -> entry[user][k] += 
+					normalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entry[friend][k];
+				userSimilarityWeightedSumMatrix -> entry[friend][k] += 
+					normalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entry[user][k];
 
-				userFactorSimilarityMeanVector.entries[0][k] += normalizedSimilarity;
+				userFactorSimilarityMeanVector.entry[0][k] += normalizedSimilarity;
 			}	
 		}
 	}
 	for(int k = 0; k < model -> latentFactorCount; k ++){
-		userFactorSimilarityMeanVector.entries[0][k] /= model -> userCount;
-		userFactorSimilarityRateVector -> entries[0][k] = model -> latentFactorCount / userFactorSimilarityMeanVector.entries[0][k];
+		userFactorSimilarityMeanVector.entry[0][k] /= model -> userCount;
+		userFactorSimilarityRateVector -> entry[0][k] = model -> latentFactorCount / userFactorSimilarityMeanVector.entry[0][k];
 	}
 	matrixReleaseSpace(&userFactorSimilarityMeanVector);
 }
 
-// Notation: 1 / \Lambda_{V}, \Lambda{Vjg} in the implicit social network
-void matrixFactorizationEstimateItemSimilarityMatrix(MatrixFactorization *model, Matrix *itemSimilaritySumMatrix, Matrix *itemSimilarityWeightedSumMatrix, Matrix *itemFactorSimilarityRateVector){
+// \Lambda_{V}^{-1} and \Lambda{Vjg} for implicit item social networks
+void matrixFactorizationEstimateItemSimilarityMatrix(SocialCovariancePrior *model, Matrix *itemSimilaritySumMatrix,
+		Matrix *itemSimilarityWeightedSumMatrix, Matrix *itemFactorSimilarityRateVector){
+
 	matrixSetValue(itemSimilaritySumMatrix, 0);
 	matrixSetValue(itemSimilarityWeightedSumMatrix, 0);
 
-	int itemSamplingCount = (model -> similaritySamplingCount < model -> itemCount - 1)? model -> similaritySamplingCount: model -> itemCount - 1;
-	double itemSamplingRate = (double)itemSamplingCount / (model -> itemCount - 1);
+	int itemSamplingCount = (model -> similaritySamplingCount < model -> itemCount - 1)
+		? model -> similaritySamplingCount: model -> itemCount - 1;
 	Matrix itemFactorSimilarityMeanVector;
 	matrixInitialize(&itemFactorSimilarityMeanVector, 1, model -> latentFactorCount);
 	matrixSetValue(&itemFactorSimilarityMeanVector, 0);
 	for(int item = 0; item < model -> itemCount; item ++){
-		for(int friend = 0; friend < model -> itemCount; friend ++){
-			if(item == friend || randomSampleStardardUniformVariable() > itemSamplingRate){
-				continue;
-			}
+		for(int f = 0; f < itemSamplingCount; f ++){
+			int friend;
+			do{
+				friend = randomSampleInteger(0, model -> itemCount - 1);
+			}while(friend == item);
 
 			for(int k = 0; k < model -> latentFactorCount; k ++){
-				double itemMean = model -> itemFactorVariationalMeanMatrix -> entries[item][k];
-				double friendMean = model -> itemFactorVariationalMeanMatrix -> entries[friend][k];
-				double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entries[item][k];
-				double friendVariance = model -> itemFactorVariationalVarianceMatrix -> entries[friend][k];
+				double similarity = 1.0;
+				if(model -> itemFriendSimilarityClosed == false){
+					double itemMean = model -> itemFactorVariationalMeanMatrix -> entry[item][k];
+					double friendMean = model -> itemFactorVariationalMeanMatrix -> entry[friend][k];
+					double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entry[item][k];
+					double friendVariance = model -> itemFactorVariationalVarianceMatrix -> entry[friend][k];
+					
+					double similarityRate = ((itemMean - friendMean) * (itemMean - friendMean)
+							+ itemVariance + friendVariance + itemFactorSimilarityRateVector -> entry[0][k]);
+					similarity = 1.0 / similarityRate;
+				}
+				double normalizedSimilarity = (model -> latentFactorCount + 1) * similarity / itemSamplingCount;
 
-				double similarityRate = ((itemMean - friendMean) * (itemMean - friendMean) + itemVariance + friendVariance + itemFactorSimilarityRateVector -> entries[0][k]);
-				double similarity = (model -> latentFactorCount + 1) / similarityRate;
-				double normalizedSimilarity = similarity / itemSamplingCount;
-			
-				itemSimilaritySumMatrix -> entries[item][k] += normalizedSimilarity;
-				itemSimilaritySumMatrix -> entries[friend][k] += normalizedSimilarity;
+				itemSimilaritySumMatrix -> entry[item][k] += normalizedSimilarity;
+				itemSimilaritySumMatrix -> entry[friend][k] += normalizedSimilarity;
 				
-				itemSimilarityWeightedSumMatrix -> entries[item][k] += 
-					normalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entries[friend][k];
-				itemSimilarityWeightedSumMatrix -> entries[friend][k] += 
-					normalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entries[item][k];
+				itemSimilarityWeightedSumMatrix -> entry[item][k] += 
+					normalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entry[friend][k];
+				itemSimilarityWeightedSumMatrix -> entry[friend][k] += 
+					normalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entry[item][k];
 
-				itemFactorSimilarityMeanVector.entries[0][k] += normalizedSimilarity;
+				itemFactorSimilarityMeanVector.entry[0][k] += normalizedSimilarity;
 			}
 		}
 	}
 	for(int k = 0; k < model -> latentFactorCount; k ++){
-		itemFactorSimilarityMeanVector.entries[0][k] /= model -> itemCount;
-		itemFactorSimilarityRateVector -> entries[0][k] = model -> latentFactorCount / itemFactorSimilarityMeanVector.entries[0][k];
+		itemFactorSimilarityMeanVector.entry[0][k] /= model -> itemCount;
+		itemFactorSimilarityRateVector -> entry[0][k] = model -> latentFactorCount / itemFactorSimilarityMeanVector.entry[0][k];
 	}
 	matrixReleaseSpace(&itemFactorSimilarityMeanVector);
 }
 
-// Notation: 1 / \Lambda_{U}, \Lambda{Uif} in the explicit social network
-void matrixFactorizationEstimateUserSparseSimilarityMatrix(MatrixFactorization *model, Matrix *userSimilaritySumMatrix, Matrix *userSimilarityWeightedSumMatrix, Matrix *userFactorSimilarityRateVector, List *userSocialNetwork){
+// \Lambda_{U}^{-1}, \Lambda{Uif} for explicit user social networks
+void matrixFactorizationEstimateUserSparseSimilarityMatrix(SocialCovariancePrior *model, Matrix *userSimilaritySumMatrix,
+		Matrix *userSimilarityWeightedSumMatrix, Matrix *userFactorSimilarityRateVector, List *userFriendList){
+
 	matrixSetValue(userSimilaritySumMatrix, 0);
 	matrixSetValue(userSimilarityWeightedSumMatrix, 0);
 
@@ -161,43 +217,48 @@ void matrixFactorizationEstimateUserSparseSimilarityMatrix(MatrixFactorization *
 	matrixInitialize(&userFactorSimilarityMeanVector, 1, model -> latentFactorCount);
 	matrixSetValue(&userFactorSimilarityMeanVector, 0);
 	for(int user = 0; user < model -> userCount; user ++){
-		for(int f = 0; f < userSocialNetwork -> columnCounts[user]; f ++){
-			int friend = userSocialNetwork -> entries[user][f].key;
+		for(int f = 0; f < userFriendList -> columnCounts[user]; f ++){
+			int friend = userFriendList -> entry[user][f].key;
 
 			for(int k = 0; k < model -> latentFactorCount; k ++){
-				double userMean = model -> userFactorVariationalMeanMatrix -> entries[user][k];
-				double friendMean = model -> userFactorVariationalMeanMatrix -> entries[friend][k];
-				double userVariance = model -> userFactorVariationalVarianceMatrix -> entries[user][k];
-				double friendVariance = model -> userFactorVariationalVarianceMatrix -> entries[friend][k];
+				double similarity = 1.0;
+				if(model -> userFriendSimilarityClosed == false){
+					double userMean = model -> userFactorVariationalMeanMatrix -> entry[user][k];
+					double friendMean = model -> userFactorVariationalMeanMatrix -> entry[friend][k];
+					double userVariance = model -> userFactorVariationalVarianceMatrix -> entry[user][k];
+					double friendVariance = model -> userFactorVariationalVarianceMatrix -> entry[friend][k];
 
-				double similarityRate = ((userMean - friendMean) * (userMean - friendMean) + userVariance + friendVariance + userFactorSimilarityRateVector -> entries[0][k]);
-				double similarity = (model -> latentFactorCount + 1) / similarityRate;
-				
-				double userNormalizedSimilarity = similarity / userSocialNetwork -> columnCounts[user];
-				userSimilaritySumMatrix -> entries[user][k] += userNormalizedSimilarity;
-				userSimilarityWeightedSumMatrix -> entries[user][k] += 
-					userNormalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entries[friend][k];
+					double similarityRate = ((userMean - friendMean) * (userMean - friendMean)
+							+ userVariance + friendVariance + userFactorSimilarityRateVector -> entry[0][k]);
+					similarity = 1.0 / similarityRate;
+				}
+				double userNormalizedSimilarity = (model -> latentFactorCount + 1) * similarity / userFriendList -> columnCounts[user];
+				userSimilaritySumMatrix -> entry[user][k] += userNormalizedSimilarity;
+				userSimilarityWeightedSumMatrix -> entry[user][k] += 
+					userNormalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entry[friend][k];
 
-				if(userSocialNetwork -> columnCounts[friend] > 0){
-					double friendNormalizedSimilarity = similarity / userSocialNetwork -> columnCounts[friend];
-					userSimilaritySumMatrix -> entries[friend][k] += friendNormalizedSimilarity;
-					userSimilarityWeightedSumMatrix -> entries[friend][k] += 
-						friendNormalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entries[user][k];
+				if(userFriendList -> columnCounts[friend] > 0){
+					double friendNormalizedSimilarity = similarity / userFriendList -> columnCounts[friend];
+					userSimilaritySumMatrix -> entry[friend][k] += friendNormalizedSimilarity;
+					userSimilarityWeightedSumMatrix -> entry[friend][k] += 
+						friendNormalizedSimilarity * model -> userFactorVariationalMeanMatrix -> entry[user][k];
 				}
 
-				userFactorSimilarityMeanVector.entries[0][k] += userNormalizedSimilarity;
+				userFactorSimilarityMeanVector.entry[0][k] += userNormalizedSimilarity;
 			}
 		}
 	}
 	for(int k = 0; k < model -> latentFactorCount; k ++){
-		userFactorSimilarityMeanVector.entries[0][k] /= model -> userCount;
-		userFactorSimilarityRateVector -> entries[0][k] = model -> latentFactorCount / userFactorSimilarityMeanVector.entries[0][k];
+		userFactorSimilarityMeanVector.entry[0][k] /= model -> userCount;
+		userFactorSimilarityRateVector -> entry[0][k] = model -> latentFactorCount / userFactorSimilarityMeanVector.entry[0][k];
 	}
 	matrixReleaseSpace(&userFactorSimilarityMeanVector);
 }
 
-// Notation: 1 / \Lambda_{V}, \Lambda{Vjg} in the explicit social network
-void matrixFactorizationEstimateItemSparseSimilarityMatrix(MatrixFactorization *model, Matrix *itemSimilaritySumMatrix, Matrix *itemSimilarityWeightedSumMatrix, Matrix *itemFactorSimilarityRateVector, List *itemSocialNetwork){
+// \Lambda_{V}^{-1}, \Lambda{Vjg} for explicit item social networks
+void matrixFactorizationEstimateItemSparseSimilarityMatrix(SocialCovariancePrior *model, Matrix *itemSimilaritySumMatrix,
+		Matrix *itemSimilarityWeightedSumMatrix, Matrix *itemFactorSimilarityRateVector, List *itemFriendList){
+
 	matrixSetValue(itemSimilaritySumMatrix, 0);
 	matrixSetValue(itemSimilarityWeightedSumMatrix, 0);
 
@@ -205,60 +266,66 @@ void matrixFactorizationEstimateItemSparseSimilarityMatrix(MatrixFactorization *
 	matrixInitialize(&itemFactorSimilarityMeanVector, 1, model -> latentFactorCount);
 	matrixSetValue(&itemFactorSimilarityMeanVector, 0);
 	for(int item = 0; item < model -> itemCount; item ++){
-		for(int f = 0; f < itemSocialNetwork -> columnCounts[item]; f ++){
-			int friend = itemSocialNetwork -> entries[item][f].key;
+		for(int f = 0; f < itemFriendList -> columnCounts[item]; f ++){
+			int friend = itemFriendList -> entry[item][f].key;
 			
 			for(int k = 0; k < model -> latentFactorCount; k ++){
-				double itemMean = model -> itemFactorVariationalMeanMatrix -> entries[item][k];
-				double friendMean = model -> itemFactorVariationalMeanMatrix -> entries[friend][k];
-				double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entries[item][k];
-				double friendVariance = model -> itemFactorVariationalVarianceMatrix -> entries[friend][k];
+				double similarity = 1.0;
+				if(model -> itemFriendSimilarityClosed == false){
+					double itemMean = model -> itemFactorVariationalMeanMatrix -> entry[item][k];
+					double friendMean = model -> itemFactorVariationalMeanMatrix -> entry[friend][k];
+					double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entry[item][k];
+					double friendVariance = model -> itemFactorVariationalVarianceMatrix -> entry[friend][k];
 
-				double similarityRate = ((itemMean - friendMean) * (itemMean - friendMean) + itemVariance + friendVariance + itemFactorSimilarityRateVector -> entries[0][k]);
-				double similarity = (model -> latentFactorCount + 1) / similarityRate;
-				
-				double itemNormalizedSimilarity = similarity / itemSocialNetwork -> columnCounts[item];
-				itemSimilaritySumMatrix -> entries[item][k] += itemNormalizedSimilarity;
-				itemSimilarityWeightedSumMatrix -> entries[item][k] += 
-					itemNormalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entries[friend][k];
+					double similarityRate = ((itemMean - friendMean) * (itemMean - friendMean)
+							+ itemVariance + friendVariance + itemFactorSimilarityRateVector -> entry[0][k]);
+					similarity = 1.0 / similarityRate;
+				}
+				double itemNormalizedSimilarity = (model -> latentFactorCount + 1) * similarity / itemFriendList -> columnCounts[item];
+				itemSimilaritySumMatrix -> entry[item][k] += itemNormalizedSimilarity;	
+				itemSimilarityWeightedSumMatrix -> entry[item][k] += 
+					itemNormalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entry[friend][k];
 
-				if(itemSocialNetwork -> columnCounts[friend] > 0){
-					double friendNormalizedSimilarity = similarity / itemSocialNetwork -> columnCounts[friend];
-					itemSimilaritySumMatrix -> entries[friend][k] += friendNormalizedSimilarity;
-					itemSimilarityWeightedSumMatrix -> entries[friend][k] += 
-						friendNormalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entries[item][k];
+				if(itemFriendList -> columnCounts[friend] > 0){
+					double friendNormalizedSimilarity = similarity / itemFriendList -> columnCounts[friend];
+					itemSimilaritySumMatrix -> entry[friend][k] += friendNormalizedSimilarity;
+					itemSimilarityWeightedSumMatrix -> entry[friend][k] += 
+						friendNormalizedSimilarity * model -> itemFactorVariationalMeanMatrix -> entry[item][k];
 				}
 
-				itemFactorSimilarityMeanVector.entries[0][k] += itemNormalizedSimilarity;
+				itemFactorSimilarityMeanVector.entry[0][k] += itemNormalizedSimilarity;
 			}	
 		}
 	}
 	for(int k = 0; k < model -> latentFactorCount; k ++){
-		itemFactorSimilarityMeanVector.entries[0][k] /= model -> itemCount;
-		itemFactorSimilarityRateVector -> entries[0][k] = model -> latentFactorCount / itemFactorSimilarityMeanVector.entries[0][k];
+		itemFactorSimilarityMeanVector.entry[0][k] /= model -> itemCount;
+		itemFactorSimilarityRateVector -> entry[0][k] = model -> latentFactorCount / itemFactorSimilarityMeanVector.entry[0][k];
 	}
 	matrixReleaseSpace(&itemFactorSimilarityMeanVector);
 }
 
-// Notation: 1 / \sigma_{R}^{2}
-double matrixFactorizationEstimateRatingPrecision(MatrixFactorization *model, List *ratings){
+// \sigma_{R}^{-2}
+double matrixFactorizationEstimateRatingPrecision(SocialCovariancePrior *model, List *ratingList){
 	double ratingVariance = 0.0;
-	int ratingCount = listCountEntries(ratings);
+	int ratingCount = listCountEntries(ratingList);
 
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			int item = ratings -> entries[user][j].key;
-			double rating = ratings -> entries[user][j].value;
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for reduction(+:ratingVariance)
+#endif
+	for(int user = 0; user < ratingList -> rowCount; user ++){
+		for(int j = 0; j < ratingList -> columnCounts[user]; j ++){
+			int item = ratingList -> entry[user][j].key;
+			double rating = ratingList -> entry[user][j].value;
 
 			double variationalMeanDotProduct = 0.0;
 			double variationalVarianceDotProduct = 0.0;
 			double variationalUserMeanSquareItemVarianceDotProduct = 0.0;
 			double variationalItemMeanSquareUserVarianceDotProduct = 0.0;
 			for(int k = 0; k < model -> latentFactorCount; k ++){
-				double userMean = model -> userFactorVariationalMeanMatrix -> entries[user][k];
-				double itemMean = model -> itemFactorVariationalMeanMatrix -> entries[item][k];
-				double userVariance = model -> userFactorVariationalVarianceMatrix -> entries[user][k];
-				double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entries[item][k];
+				double userMean = model -> userFactorVariationalMeanMatrix -> entry[user][k];
+				double itemMean = model -> itemFactorVariationalMeanMatrix -> entry[item][k];
+				double userVariance = model -> userFactorVariationalVarianceMatrix -> entry[user][k];
+				double itemVariance = model -> itemFactorVariationalVarianceMatrix -> entry[item][k];
 
 				variationalMeanDotProduct += userMean * itemMean;
 
@@ -269,7 +336,7 @@ double matrixFactorizationEstimateRatingPrecision(MatrixFactorization *model, Li
 				variationalItemMeanSquareUserVarianceDotProduct += itemMean * itemMean * userVariance;
 			}
 
-			ratingVariance += rating * rating
+			ratingVariance = ratingVariance + rating * rating
 				- 2 * rating * variationalMeanDotProduct
 				+ variationalMeanDotProduct * variationalMeanDotProduct
 				+ variationalVarianceDotProduct
@@ -282,12 +349,15 @@ double matrixFactorizationEstimateRatingPrecision(MatrixFactorization *model, Li
 	return ratingPrecision;
 }
 
-// Notation: \lambda_{Ui} and \gamma_{Ui}
-void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(MatrixFactorization *model, List *userRatings,
+// \lambda_{Ui} and \gamma_{Ui}
+void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(SocialCovariancePrior *model, List *userRatingList,
 		double userFactorPrecision,
 		Matrix *userSimilaritySumMatrix, Matrix *userSimilarityWeightedSumMatrix,
 		double ratingPrecision){
 	
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for
+#endif
 	for(int user = 0; user < model -> userCount; user ++){
 		Matrix momentMatrix;
 		matrixInitialize(&momentMatrix, model -> latentFactorCount, model -> latentFactorCount);
@@ -295,26 +365,26 @@ void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(Matrix
 		for(int k = 0; k < model -> latentFactorCount; k ++){
 			for(int l = 0; l <= k; l ++){
 				double moment = 0.0;
-				for(int j = 0; j < userRatings -> columnCounts[user]; j ++){
-					int item = userRatings -> entries[user][j].key;
+				for(int j = 0; j < userRatingList -> columnCounts[user]; j ++){
+					int item = userRatingList -> entry[user][j].key;
 
-					moment += model -> itemFactorVariationalMeanMatrix -> entries[item][k] * model -> itemFactorVariationalMeanMatrix -> entries[item][l];
+					moment += model -> itemFactorVariationalMeanMatrix -> entry[item][k] * model -> itemFactorVariationalMeanMatrix -> entry[item][l];
 					if(k == l){
-						moment += model -> itemFactorVariationalVarianceMatrix -> entries[item][k];
+						moment += model -> itemFactorVariationalVarianceMatrix -> entry[item][k];
 					}
 				}
 				moment *= ratingPrecision;
 				
 				if(k == l){
-					moment += userFactorPrecision * (1.0 - model -> userBalanceParameter);
+					moment += userFactorPrecision * model -> userFactorRegularizationRatio;
 				}
 				
 				if(k == l){
-					moment += userSimilaritySumMatrix -> entries[user][k] * model -> userBalanceParameter;
+					moment += userSimilaritySumMatrix -> entry[user][k] * model -> userFriendRegularizationRatio;
 				}
 				
-				momentMatrix.entries[k][l] = moment;
-				momentMatrix.entries[l][k] = moment;
+				momentMatrix.entry[k][l] = moment;
+				momentMatrix.entry[l][k] = moment;
 			}
 		}
 
@@ -324,7 +394,7 @@ void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(Matrix
 		matrixReleaseSpace(&momentMatrix);
 		
 		for(int k = 0; k < model -> latentFactorCount; k ++){
-			model -> userFactorVariationalVarianceMatrix -> entries[user][k] = momentInverseMatrix.entries[k][k];
+			model -> userFactorVariationalVarianceMatrix -> entry[user][k] = momentInverseMatrix.entry[k][k];
 		}
 		// =================================
 		
@@ -333,24 +403,24 @@ void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(Matrix
 
 		for(int k = 0; k < model -> latentFactorCount; k ++){
 			double weightedRating = 0.0;
-			for(int j = 0; j < userRatings -> columnCounts[user]; j ++){
-				int item = userRatings -> entries[user][j].key;
-				double rating = userRatings -> entries[user][j].value;
+			for(int j = 0; j < userRatingList -> columnCounts[user]; j ++){
+				int item = userRatingList -> entry[user][j].key;
+				double rating = userRatingList -> entry[user][j].value;
 
-				weightedRating += rating * model -> itemFactorVariationalMeanMatrix -> entries[item][k];
+				weightedRating += rating * model -> itemFactorVariationalMeanMatrix -> entry[item][k];
 			}
 			weightedRating *= ratingPrecision;
 
-			weightedRating += userSimilarityWeightedSumMatrix -> entries[user][k] * model -> userBalanceParameter;
+			weightedRating += userSimilarityWeightedSumMatrix -> entry[user][k] * model -> userFriendRegularizationRatio;
 
-			weightedRatingVector.entries[0][k] = weightedRating;
+			weightedRatingVector.entry[0][k] = weightedRating;
 		}
 		
 		// =================================
 
 		for(int k = 0; k  < model -> latentFactorCount; k ++){
-			model -> userFactorVariationalMeanMatrix -> entries[user][k] = vectorCalculateDotProduct(
-					momentInverseMatrix.entries[k], weightedRatingVector.entries[0], model -> latentFactorCount);
+			model -> userFactorVariationalMeanMatrix -> entry[user][k] = vectorCalculateDotProduct(
+					momentInverseMatrix.entry[k], weightedRatingVector.entry[0], model -> latentFactorCount);
 		}
 
 		matrixReleaseSpace(&momentInverseMatrix);
@@ -358,12 +428,15 @@ void matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(Matrix
 	}
 }
 
-// Notation: \lambda_{Vj} and \gamma_{Vj}
-void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(MatrixFactorization *model, List *itemRatings,
+// \lambda_{Vj} and \gamma_{Vj}
+void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(SocialCovariancePrior *model, List *itemRatingList,
 		double itemFactorPrecision,
 		Matrix *itemSimilaritySumMatrix, Matrix *itemSimilarityWeightedSumMatrix,
 		double ratingPrecision){
 
+#ifdef SCP_PARALLEL_OPEN
+	#pragma omp parallel for
+#endif
 	for(int item = 0; item < model -> itemCount; item ++){
 		Matrix momentMatrix;
 		matrixInitialize(&momentMatrix, model -> latentFactorCount, model -> latentFactorCount);
@@ -371,26 +444,26 @@ void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(Matrix
 		for(int k = 0; k < model -> latentFactorCount; k ++){
 			for(int l = 0; l <= k; l ++){
 				double moment = 0.0;
-				for(int j = 0; j < itemRatings -> columnCounts[item]; j ++){
-					int user = itemRatings -> entries[item][j].key;
+				for(int j = 0; j < itemRatingList -> columnCounts[item]; j ++){
+					int user = itemRatingList -> entry[item][j].key;
 
-					moment += model -> userFactorVariationalMeanMatrix -> entries[user][k] * model -> userFactorVariationalMeanMatrix -> entries[user][l];
+					moment += model -> userFactorVariationalMeanMatrix -> entry[user][k] * model -> userFactorVariationalMeanMatrix -> entry[user][l];
 					if(k == l){
-						moment += model -> userFactorVariationalVarianceMatrix -> entries[user][k];
+						moment += model -> userFactorVariationalVarianceMatrix -> entry[user][k];
 					}
 				}
 				moment *= ratingPrecision;
 				
 				if(k == l){
-					moment += itemFactorPrecision * (1.0 - model -> itemBalanceParameter);
+					moment += itemFactorPrecision * model -> itemFactorRegularizationRatio;
 				}
 				
 				if(k == l){
-					moment += itemSimilaritySumMatrix -> entries[item][k] * model -> itemBalanceParameter;
+					moment += itemSimilaritySumMatrix -> entry[item][k] * model -> itemFriendRegularizationRatio;
 				}
 				
-				momentMatrix.entries[k][l] = moment;
-				momentMatrix.entries[l][k] = moment;
+				momentMatrix.entry[k][l] = moment;
+				momentMatrix.entry[l][k] = moment;
 			}
 		}
 
@@ -400,7 +473,7 @@ void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(Matrix
 		matrixReleaseSpace(&momentMatrix);
 		
 		for(int k = 0; k < model -> latentFactorCount; k ++){
-			model -> itemFactorVariationalVarianceMatrix -> entries[item][k] = momentInverseMatrix.entries[k][k];
+			model -> itemFactorVariationalVarianceMatrix -> entry[item][k] = momentInverseMatrix.entry[k][k];
 		}
 		// =================================
 		
@@ -409,24 +482,24 @@ void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(Matrix
 
 		for(int k = 0; k < model -> latentFactorCount; k ++){
 			double weightedRating = 0.0;
-			for(int i = 0; i < itemRatings -> columnCounts[item]; i ++){
-				int user = itemRatings -> entries[item][i].key;
-				double rating = itemRatings -> entries[item][i].value;
+			for(int i = 0; i < itemRatingList -> columnCounts[item]; i ++){
+				int user = itemRatingList -> entry[item][i].key;
+				double rating = itemRatingList -> entry[item][i].value;
 
-				weightedRating += rating * model -> userFactorVariationalMeanMatrix -> entries[user][k];
+				weightedRating += rating * model -> userFactorVariationalMeanMatrix -> entry[user][k];
 			}
 			weightedRating *= ratingPrecision;
 			
-			weightedRating += itemSimilarityWeightedSumMatrix -> entries[item][k] * model -> itemBalanceParameter;
+			weightedRating += itemSimilarityWeightedSumMatrix -> entry[item][k] * model -> itemFriendRegularizationRatio;
 			
-			weightedRatingVector.entries[0][k] = weightedRating;
+			weightedRatingVector.entry[0][k] = weightedRating;
 		}
 		
 		// =================================
 
 		for(int k = 0; k  < model -> latentFactorCount; k ++){
-			model -> itemFactorVariationalMeanMatrix -> entries[item][k] = vectorCalculateDotProduct(
-					momentInverseMatrix.entries[k], weightedRatingVector.entries[0], model -> latentFactorCount);
+			model -> itemFactorVariationalMeanMatrix -> entry[item][k] = vectorCalculateDotProduct(
+					momentInverseMatrix.entry[k], weightedRatingVector.entry[0], model -> latentFactorCount);
 		}
 
 		matrixReleaseSpace(&momentInverseMatrix);
@@ -435,65 +508,71 @@ void matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(Matrix
 	}
 }
 
-void matrixFactorizationRunVMStep(MatrixFactorization *model, List *ratings,
+void matrixFactorizationRunVMStep(SocialCovariancePrior *model, List *ratingList,
 		double *userFactorPrecision, double *itemFactorPrecision,
 		Matrix *userSimilaritySumMatrix, Matrix *itemSimilaritySumMatrix,
 		Matrix *userSimilarityWeightedSumMatrix, Matrix *itemSimilarityWeightedSumMatrix,
 		Matrix *userFactorSimilarityRateVector, Matrix *itemFactorSimilarityRateVector,
 		double *ratingPrecision,
-		List *userSocialNetwork, List *itemSocialNetwork){
+		List *userFriendList, List *itemFriendList){
 	
-	*ratingPrecision = matrixFactorizationEstimateRatingPrecision(model, ratings);
+	*ratingPrecision = matrixFactorizationEstimateRatingPrecision(model, ratingList);
 	
-	if(model -> userBalanceParameter < 1){
+	if(model -> userFactorRegularizationRatio > 0){
 		*userFactorPrecision = matrixFactorizationEstimateUserFactorPrecision(model);
 	}
 
-	if(model -> itemBalanceParameter < 1){
+	if(model -> itemFactorRegularizationRatio > 0){
 		*itemFactorPrecision = matrixFactorizationEstimateItemFactorPrecision(model);
 	}
 	
-	if(model -> userBalanceParameter > 0){
-		if(model -> userExplicitSocialNetworkImported){
-			matrixFactorizationEstimateUserSparseSimilarityMatrix(model, userSimilaritySumMatrix, userSimilarityWeightedSumMatrix, userFactorSimilarityRateVector, userSocialNetwork);
+	if(model -> userFriendRegularizationRatio > 0){
+		if(model -> userFriendImported){
+			matrixFactorizationEstimateUserSparseSimilarityMatrix(model, userSimilaritySumMatrix, 
+					userSimilarityWeightedSumMatrix, userFactorSimilarityRateVector, userFriendList);
 		}else{
-			matrixFactorizationEstimateUserSimilarityMatrix(model, userSimilaritySumMatrix, userSimilarityWeightedSumMatrix, userFactorSimilarityRateVector);
+			matrixFactorizationEstimateUserSimilarityMatrix(model, userSimilaritySumMatrix, 
+					userSimilarityWeightedSumMatrix, userFactorSimilarityRateVector);
 		}
 	}
 
-	if(model -> itemBalanceParameter > 0){
-		if(model -> itemExplicitSocialNetworkImported){
-			matrixFactorizationEstimateItemSparseSimilarityMatrix(model, itemSimilaritySumMatrix, itemSimilarityWeightedSumMatrix, itemFactorSimilarityRateVector, itemSocialNetwork);
+	if(model -> itemFriendRegularizationRatio > 0){
+		if(model -> itemFriendImported){
+			matrixFactorizationEstimateItemSparseSimilarityMatrix(model, itemSimilaritySumMatrix, 
+					itemSimilarityWeightedSumMatrix, itemFactorSimilarityRateVector, itemFriendList);
 		}else{
-			matrixFactorizationEstimateItemSimilarityMatrix(model, itemSimilaritySumMatrix, itemSimilarityWeightedSumMatrix, itemFactorSimilarityRateVector);
+			matrixFactorizationEstimateItemSimilarityMatrix(model, itemSimilaritySumMatrix, 
+					itemSimilarityWeightedSumMatrix, itemFactorSimilarityRateVector);
 		}
 	}
 }
 
-void matrixFactorizationRunVEStep(MatrixFactorization *model, List *userRatings, List *itemRatings,
+void matrixFactorizationRunVEStep(SocialCovariancePrior *model, List *userRatingList, List *itemRatingList,
 		double userFactorPrecision, double itemFactorPrecision,
 		Matrix *userSimilaritySumMatrix, Matrix *itemSimilaritySumMatrix,
 		Matrix *userSimilarityWeightedSumMatrix, Matrix *itemSimilarityWeightedSumMatrix,
 		double ratingPrecision){
 
-	matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(model, userRatings,
+	matrixFactorizationEstimateUserFactorVariationalMeanVarianceMatrices(model, userRatingList,
 		userFactorPrecision, 
 		userSimilaritySumMatrix, userSimilarityWeightedSumMatrix,
 		ratingPrecision);
 
-	matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(model, itemRatings, 
+	matrixFactorizationEstimateItemFactorVariationalMeanVarianceMatrices(model, itemRatingList, 
 		itemFactorPrecision,
 		itemSimilaritySumMatrix, itemSimilarityWeightedSumMatrix,
 		ratingPrecision);
 }
 
-void matrixFactorizationLearn(MatrixFactorization *model, List *trainingRatings, List *validationRatings, List *userSocialNetwork, List *itemSocialNetwork){
-	List *userRatings = trainingRatings;
-	List itemRatings;
-	listInitialize(&itemRatings, model -> itemCount);
+void matrixFactorizationLearn(SocialCovariancePrior *model, List *trainingRatingList, List *validationRatingList,
+		List *userFriendList, List *itemFriendList, char *ratingFilePath){
+
+	List *userRatingList = trainingRatingList;
+	listSortRows(userRatingList);
 	
-	listSortRows(userRatings);
-	listGetAllColumnVectors(trainingRatings, &itemRatings);
+	List itemRatingList;
+	listInitialize(&itemRatingList, model -> itemCount);
+	listGetReverseList(trainingRatingList, &itemRatingList);
 
 	double ratingPrecision = 1;
 	
@@ -511,46 +590,55 @@ void matrixFactorizationLearn(MatrixFactorization *model, List *trainingRatings,
 	Matrix itemSimilaritySumMatrix;
 	matrixInitialize(&userSimilaritySumMatrix, model -> userCount, model -> latentFactorCount);
 	matrixInitialize(&itemSimilaritySumMatrix, model -> itemCount, model -> latentFactorCount);
-	matrixAssignRandomValues(&userSimilaritySumMatrix, 0, 1);
-	matrixAssignRandomValues(&itemSimilaritySumMatrix, 0, 1);
+	matrixSetRandomValues(&userSimilaritySumMatrix, 0, 1);
+	matrixSetRandomValues(&itemSimilaritySumMatrix, 0, 1);
 	
 	Matrix userSimilarityWeightedSumMatrix;
 	Matrix itemSimilarityWeightedSumMatrix;	
-	matrixInitialize(&userSimilarityWeightedSumMatrix, model -> userCount, model -> latentFactorCount);
-	matrixInitialize(&itemSimilarityWeightedSumMatrix, model -> itemCount, model -> latentFactorCount);
-	matrixAssignRandomValues(&userSimilarityWeightedSumMatrix, 0, 1);
-	matrixAssignRandomValues(&itemSimilarityWeightedSumMatrix, 0, 1);
+	matrixInitialize(&userSimilarityWeightedSumMatrix, model -> userCount, model -> latentFactorCount);		// N * K
+	matrixInitialize(&itemSimilarityWeightedSumMatrix, model -> itemCount, model -> latentFactorCount);		// M * K
+	matrixSetRandomValues(&userSimilarityWeightedSumMatrix, 0, 1);
+	matrixSetRandomValues(&itemSimilarityWeightedSumMatrix, 0, 1);
 	
-	matrixAssignRandomValues(model -> userFactorVariationalMeanMatrix, 0, 1);
-	matrixAssignRandomValues(model -> itemFactorVariationalMeanMatrix, 0, 1);
-	matrixAssignRandomValues(model -> userFactorVariationalVarianceMatrix, 0, 1);
-	matrixAssignRandomValues(model -> itemFactorVariationalVarianceMatrix, 0, 1);
+	matrixSetRandomValues(model -> userFactorVariationalMeanMatrix, 0, 1);
+	matrixSetRandomValues(model -> itemFactorVariationalMeanMatrix, 0, 1);
+	matrixSetRandomValues(model -> userFactorVariationalVarianceMatrix, 0, 1);
+	matrixSetRandomValues(model -> itemFactorVariationalVarianceMatrix, 0, 1);
+	
+	Optimizer optimizer;
+	optimizerInitialize(&optimizer);
 	
 	double lastValidationCost = DBL_MAX;
-	for(int epoch = 0; epoch < model -> maxIterationCount; epoch ++){
-		matrixFactorizationRunVMStep(model, trainingRatings,
+	for(int epoch = 0; epoch < optimizer.epochCount; epoch ++){	
+		// E step other random variables
+		matrixFactorizationRunVEStep(model, userRatingList, &itemRatingList,
+			userFactorPrecision, itemFactorPrecision,
+			&userSimilaritySumMatrix, &itemSimilaritySumMatrix,
+			&userSimilarityWeightedSumMatrix, &itemSimilarityWeightedSumMatrix,
+			ratingPrecision);
+
+		// M-step and E-step similarity random variables
+		matrixFactorizationRunVMStep(model, trainingRatingList,
 			&userFactorPrecision, &itemFactorPrecision,
 			&userSimilaritySumMatrix, &itemSimilaritySumMatrix,
 			&userSimilarityWeightedSumMatrix, &itemSimilarityWeightedSumMatrix,
 			&userFactorSimilarityRateVector, &itemFactorSimilarityRateVector,
 			&ratingPrecision,
-			userSocialNetwork, itemSocialNetwork);
+			userFriendList, itemFriendList);
 
-		matrixFactorizationRunVEStep(model, userRatings, &itemRatings,
-			userFactorPrecision, itemFactorPrecision,
-			&userSimilaritySumMatrix, &itemSimilaritySumMatrix,
-			&userSimilarityWeightedSumMatrix, &itemSimilarityWeightedSumMatrix,
-			ratingPrecision);	
+		double validationCost = matrixFactorizationEvaluateRMSE(model, validationRatingList);
+		
+		printf("%s\tEpoch %4d\tValidCost %f\tCostDescent %f\t\n", ratingFilePath, epoch + 1,
+				validationCost, (epoch > 0) ? lastValidationCost - validationCost : 0.0);
 
-		double validationCost = matrixFactorizationEvaluateRMSE(model, validationRatings);
-		printf("Iteration %4d\tValidation RMSE %f\tRMSE Descent %f\n", epoch + 1, validationCost, (epoch > 0) ? lastValidationCost - validationCost : 0.0);
-
-		if(epoch > 0 && lastValidationCost - validationCost < model -> convergenceThreshold){
+		if(epoch > 0 && lastValidationCost - validationCost < optimizer.convergenceThreshold || isnan(validationCost)){
+			printf("%s\tEarly stopping\n", ratingFilePath);
 			break;
 		}
+
 		lastValidationCost = validationCost;
 	}
-
+	
 	matrixReleaseSpace(&userSimilaritySumMatrix);
 	matrixReleaseSpace(&itemSimilaritySumMatrix);
 	matrixReleaseSpace(&userSimilarityWeightedSumMatrix);
@@ -558,250 +646,108 @@ void matrixFactorizationLearn(MatrixFactorization *model, List *trainingRatings,
 	matrixReleaseSpace(&userFactorSimilarityRateVector);
 	matrixReleaseSpace(&itemFactorSimilarityRateVector);
 	
-	listReleaseSpace(&itemRatings);
+	listReleaseSpace(&itemRatingList);
 }
 
-double matrixFactorizationPredict(MatrixFactorization *model, int user, int item){
-	double predictedRating = vectorCalculateDotProduct(
-			model -> userFactorVariationalMeanMatrix -> entries[user], model -> itemFactorVariationalMeanMatrix -> entries[item],
-			model -> latentFactorCount);
-	return predictedRating;
-}
-
-double matrixFactorizationEvaluateRMSE(MatrixFactorization *model, List *ratings){
-	double rmse = 0.0;
-	int totalRatingCount = listCountEntries(ratings);
-
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			int item = ratings -> entries[user][j].key;
-			double trueRating = ratings -> entries[user][j].value;
-
-			double predictedRating = matrixFactorizationPredict(model, user, item);
-
-			double difference = predictedRating - trueRating;
-			rmse += difference * difference;
-		}
-	}
-
-	rmse = sqrt(rmse / totalRatingCount);
-	return rmse;
-}
-
-double matrixFactorizationEvaluate(MatrixFactorization *model, List *ratings, int evaluationType){
-	switch(evaluationType){
-		case 1:
-			return matrixFactorizationEvaluateRMSE(model, ratings);
-	}
-}
-//==============================================================================================
-typedef struct CROSS_VALIDATION{
-	int foldCount;
-	int evaluationTypeCount;
-	int *evaluationTypes;
-	int trainingFoldCount;
-} CrossValidation;
-
-void crossValidationGroupRatings(List *ratings, int foldCount, List *groupMarkers){
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		groupMarkers -> entries[user] = (Dict*)realloc(groupMarkers -> entries[user], sizeof(Dict) * ratings -> columnCounts[user]);
-		groupMarkers -> columnCounts[user] = ratings -> columnCounts[user];
-
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			int item = ratings -> entries[user][j].key;
-			groupMarkers -> entries[user][j].key = item;
-			groupMarkers -> entries[user][j].value = randomSampleInteger(0, foldCount - 1);
-		}
-	}
-}
-
-void crossValidationSplitRatings(List *ratings, List *groupMarkers, List *trainingRatings, List *validationRatings, int validationGroup){
-	for(int user = 0; user < ratings -> rowCount; user ++){
-		for(int j = 0; j < ratings -> columnCounts[user]; j ++){
-			int item = ratings -> entries[user][j].key;
-			double rating = ratings -> entries[user][j].value;
-			int group = groupMarkers -> entries[user][j].value;
-
-			if(group == validationGroup){
-				listAddEntry(validationRatings, user, item, rating);
-			}
-			else{
-				listAddEntry(trainingRatings, user, item, rating);
-			}
-		}
-	}
-}
-
-void crossValidationRun(CrossValidation *validation, MatrixFactorization *model, List *ratings, List *userSocialNetwork, List *itemSocialNetwork){
-	int *userEntryCounts = (int*)malloc(sizeof(int) * model -> userCount);
-	int *itemEntryCounts = (int*)malloc(sizeof(int) * model -> itemCount);
-
-	List groupMarkers;
-	listInitialize(&groupMarkers, ratings -> rowCount);
-	crossValidationGroupRatings(ratings, validation -> foldCount, &groupMarkers);
-
-	double *performanceMeans = (double*)malloc(sizeof(double) * validation -> evaluationTypeCount);
-	double *performanceVariances = (double*)malloc(sizeof(double) * validation -> evaluationTypeCount);
-
-	for(int e = 0; e < validation -> evaluationTypeCount; e ++){
-		performanceMeans[e] = 0.0;
-		performanceVariances[e] = 0.0;
-	}
-
-	for(int validedFold = 0; validedFold < validation -> foldCount; validedFold ++){
-		List trainingRatings, validationRatings;
-		listInitialize(&trainingRatings, ratings -> rowCount);
-		listInitialize(&validationRatings, ratings -> rowCount);
-		crossValidationSplitRatings(ratings, &groupMarkers, &trainingRatings, &validationRatings, validedFold);
-		
-		List trainingGroupMarkers, trainingTrainRatings, trainingValidRatings;
-		listInitialize(&trainingGroupMarkers, ratings -> rowCount);
-		listInitialize(&trainingTrainRatings, ratings -> rowCount);
-		listInitialize(&trainingValidRatings, ratings -> rowCount);
-		crossValidationGroupRatings(&trainingRatings, validation -> trainingFoldCount, &trainingGroupMarkers);
-		crossValidationSplitRatings(&trainingRatings, &trainingGroupMarkers, &trainingTrainRatings, &trainingValidRatings, 0);
-
-		matrixFactorizationLearn(model, &trainingTrainRatings, &trainingValidRatings, userSocialNetwork, itemSocialNetwork);
-		
-		printf("\t========\n");
-		printf("\tCross validation %d\n", validedFold + 1);
-		for(int e = 0; e < validation -> evaluationTypeCount; e ++){	
-			double performance = matrixFactorizationEvaluate(model, &validationRatings, validation -> evaluationTypes[e]);
-			performanceMeans[e] += performance;
-			performanceVariances[e] += performance * performance;
-			printf("\t\tRMSE %f\n", performance);
-		}
-		printf("\t========\n");
-
-		listReleaseSpace(&trainingRatings);
-		listReleaseSpace(&validationRatings);
-		listReleaseSpace(&trainingGroupMarkers);
-		listReleaseSpace(&trainingTrainRatings);
-		listReleaseSpace(&trainingValidRatings);
-	}
-
-	double wholePerformanceValue = 0.0;
-	for(int e = 0; e < validation -> evaluationTypeCount; e ++){	
-		performanceMeans[e] /= validation -> foldCount;
-		performanceVariances[e] = performanceVariances[e] / validation -> foldCount - performanceMeans[e] * performanceMeans[e];
-
-		printf("\tMean of RMSE %f\n", performanceMeans[e]);
-		printf("\tVariance of RMSE %e\n", performanceVariances[e]);
-
-	}
-
-	listReleaseSpace(&groupMarkers);
-	free(performanceMeans);
-	free(performanceVariances);
-}
-
-//==============================================================================================
 int main(int argc, char *argv[]){
 	srand(time(NULL));
 
 	char *ratingFilePath = argv[1];
-
-	int latentFactorCount = atoi(argv[2]);
-	
-	double userBalanceParameter;
-	sscanf(argv[3], "%lf", &userBalanceParameter);
-	double itemBalanceParameter;
-	sscanf(argv[4], "%lf", &itemBalanceParameter);
-
-	int userSocialNetworkImported = atoi(argv[5]);
-	int itemSocialNetworkImported = atoi(argv[6]);
-	
-	char *userSocialNetworkFilePath = argv[7];
-	char *itemSocialNetworkFilePath = argv[8];
-	
-	int userCount;
-	int itemCount;
-	ratingFetchUserItemCount(ratingFilePath, &userCount, &itemCount);
+	char *userFactorFilePath = argv[2];
+	char *itemFactorFilePath = argv[3];
+	int latentFactorCount = atoi(argv[4]);	
+	double userFriendRatio, itemFriendRatio;
+	sscanf(argv[5], "%lf", &userFriendRatio);
+	sscanf(argv[6], "%lf", &itemFriendRatio);
+	int userFriendImported = atoi(argv[7]);
+	int itemFriendImported = atoi(argv[8]);
+	char *userFriendFilePath = argv[9];
+	char *itemFriendFilePath = argv[10];
 	
 	// Read rating data
-	List ratings;
-	listInitialize(&ratings, userCount);
-	ratingReadFromFile(ratingFilePath, &ratings);
-	listSortRows(&ratings);
-	ratingNormalizeByMean(&ratings);
+	int userCount, itemCount;
+	ratingReadHeader(ratingFilePath, &userCount, &itemCount);
+	
+	List ratingList;
+	listInitialize(&ratingList, userCount);
+	ratingReadList(ratingFilePath, &ratingList);
+	ratingNormalizeListByMean(&ratingList);
 	printf("%d users, %d items\n", userCount, itemCount);
 
-	// Read user social network
-	List userSocialNetwork;
-	listInitialize(&userSocialNetwork, userCount);
-	if(userSocialNetworkImported > 0){
-		FILE *inFile = fopen(userSocialNetworkFilePath, "r");
-		listScan(inFile, &userSocialNetwork);
-		listSortRows(&userSocialNetwork);
-		fclose(inFile);
-	}
+	printf("Split training set and validation set\n");
+	double validationRatio = 0.1;
+	List trainingRatingList, validationRatingList;
+	listInitialize(&trainingRatingList, userCount);
+	listInitialize(&validationRatingList, userCount);
+	ratingSplitListValidation(&ratingList, &trainingRatingList, &validationRatingList, validationRatio);
 
-	// Read item social network	
-	List itemSocialNetwork;
-	listInitialize(&itemSocialNetwork, itemCount);
-	if(itemSocialNetworkImported > 0){
-		FILE *inFile = fopen(itemSocialNetworkFilePath, "r");
-		listScan(inFile, &itemSocialNetwork);
-		listSortRows(&itemSocialNetwork);
-		fclose(inFile);
+	listReleaseSpace(&ratingList);
+
+	// Read social network data
+	List userFriendList;
+	listInitialize(&userFriendList, userCount);
+	if((userFriendImported & 1) > 0){
+		ratingReadList(userFriendFilePath, &userFriendList);
 	}
+	printf("User social network imported: %d\n", userFriendImported);
+
+	List itemFriendList;
+	listInitialize(&itemFriendList, itemCount);
+	if((itemFriendImported & 1) > 0){
+		ratingReadList(itemFriendFilePath, &itemFriendList);
+	}
+	printf("Item social network imported: %d\n", itemFriendImported);
 	
-	// Set Social Covariance Prior parameters
-	MatrixFactorization mf = {
+	// Set model
+	SocialCovariancePrior model = {
 		.latentFactorCount = latentFactorCount,
-		.maxIterationCount = 1000,
-		.convergenceThreshold = 1e-4,
 		.similaritySamplingCount = 100,
 		.userCount = userCount,
 		.itemCount = itemCount,
-		.userBalanceParameter = userBalanceParameter,
-		.itemBalanceParameter = itemBalanceParameter,
-		.userExplicitSocialNetworkImported = userSocialNetworkImported > 0,
-		.itemExplicitSocialNetworkImported = itemSocialNetworkImported > 0
+		.userFactorRegularizationRatio = 1 - userFriendRatio,
+		.itemFactorRegularizationRatio = 1 - itemFriendRatio,
+		.userFriendRegularizationRatio = userFriendRatio,
+		.itemFriendRegularizationRatio = itemFriendRatio,
+		.userFriendImported = (userFriendImported & 1) > 0,
+		.itemFriendImported = (itemFriendImported & 1) > 0,
+		.userFriendSimilarityClosed = (userFriendImported & 2) > 0,
+		.itemFriendSimilarityClosed = (itemFriendImported & 2) > 0
 	};
-	Matrix userFactorVariationalMeanMatrix;
-	Matrix itemFactorVariationalMeanMatrix;
-	Matrix userFactorVariationalVarianceMatrix;
-	Matrix itemFactorVariationalVarianceMatrix;
 
-	matrixInitialize(&userFactorVariationalMeanMatrix, userCount, mf.latentFactorCount);
-	matrixInitialize(&itemFactorVariationalMeanMatrix, itemCount, mf.latentFactorCount);
-	matrixInitialize(&userFactorVariationalVarianceMatrix, userCount, mf.latentFactorCount);
-	matrixInitialize(&itemFactorVariationalVarianceMatrix, itemCount, mf.latentFactorCount);
-
-	mf.userFactorVariationalMeanMatrix = &userFactorVariationalMeanMatrix;
-	mf.itemFactorVariationalMeanMatrix = &itemFactorVariationalMeanMatrix;
-	mf.userFactorVariationalVarianceMatrix = &userFactorVariationalVarianceMatrix;
-	mf.itemFactorVariationalVarianceMatrix = &itemFactorVariationalVarianceMatrix;
-
-	printf("User variational mean matrix %d %d\n", userFactorVariationalMeanMatrix.rowCount, userFactorVariationalMeanMatrix.columnCount);
-	printf("Item variational mean matrix %d %d\n", itemFactorVariationalMeanMatrix.rowCount, itemFactorVariationalMeanMatrix.columnCount);
-	printf("User variational mean matrix %d %d\n", userFactorVariationalVarianceMatrix.rowCount, userFactorVariationalVarianceMatrix.columnCount);
-	printf("Item variational mean matrix %d %d\n", itemFactorVariationalVarianceMatrix.rowCount, itemFactorVariationalVarianceMatrix.columnCount);
+	printf("User friend similarity closed == %s\n", (model.userFriendSimilarityClosed)? "True": "False");
+	printf("Item friend similarity closed == %s\n", (model.itemFriendSimilarityClosed)? "True": "False");
 	
-	// Run cross validation
-	CrossValidation cv = {
-		.foldCount = 5,
-		.evaluationTypeCount = 1,
-		.trainingFoldCount = 10
-	};
-	cv.evaluationTypes = (int*)malloc(sizeof(int) * cv.evaluationTypeCount);
-	for(int e = 0; e < cv.evaluationTypeCount; e ++){
-		cv.evaluationTypes[e] = e + 1;
-	}
-	crossValidationRun(&cv, &mf, &ratings, &userSocialNetwork, &itemSocialNetwork);
-	free(cv.evaluationTypes);
+	Matrix userFactorVariationalMeanMatrix, itemFactorVariationalMeanMatrix;
+	matrixInitialize(&userFactorVariationalMeanMatrix, userCount, model.latentFactorCount);
+	matrixInitialize(&itemFactorVariationalMeanMatrix, itemCount, model.latentFactorCount);
+	model.userFactorVariationalMeanMatrix = &userFactorVariationalMeanMatrix;
+	model.itemFactorVariationalMeanMatrix = &itemFactorVariationalMeanMatrix;
+	printf("User variational mean matrix: %d %d\n", userFactorVariationalMeanMatrix.rowCount, userFactorVariationalMeanMatrix.columnCount);
+	printf("Item variational mean matrix: %d %d\n", itemFactorVariationalMeanMatrix.rowCount, itemFactorVariationalMeanMatrix.columnCount);
+
+	Matrix userFactorVariationalVarianceMatrix, itemFactorVariationalVarianceMatrix;
+	matrixInitialize(&userFactorVariationalVarianceMatrix, userCount, model.latentFactorCount);
+	matrixInitialize(&itemFactorVariationalVarianceMatrix, itemCount, model.latentFactorCount);
+	model.userFactorVariationalVarianceMatrix = &userFactorVariationalVarianceMatrix;
+	model.itemFactorVariationalVarianceMatrix = &itemFactorVariationalVarianceMatrix;
+	printf("User variational mean matrix: %d %d\n", userFactorVariationalVarianceMatrix.rowCount, userFactorVariationalVarianceMatrix.columnCount);
+	printf("Item variational mean matrix: %d %d\n", itemFactorVariationalVarianceMatrix.rowCount, itemFactorVariationalVarianceMatrix.columnCount);
+	
+	matrixFactorizationLearn(&model, &trainingRatingList, &validationRatingList, &userFriendList, &itemFriendList, ratingFilePath);
+	
+	ratingWriteMatrix(userFactorFilePath, model.userFactorVariationalMeanMatrix);
+	ratingWriteMatrix(itemFactorFilePath, model.itemFactorVariationalMeanMatrix);
 
 	// Release space
-	listReleaseSpace(&ratings);
-	listReleaseSpace(&userSocialNetwork);
-	listReleaseSpace(&itemSocialNetwork);
+	listReleaseSpace(&trainingRatingList);
+	listReleaseSpace(&validationRatingList);
 	matrixReleaseSpace(&userFactorVariationalMeanMatrix);
 	matrixReleaseSpace(&itemFactorVariationalMeanMatrix);
 	matrixReleaseSpace(&userFactorVariationalVarianceMatrix);
 	matrixReleaseSpace(&itemFactorVariationalVarianceMatrix);
+	listReleaseSpace(&userFriendList);
+	listReleaseSpace(&itemFriendList);
 
-	printf("OK\n");
-	
+	printf("%s\tOK\n", ratingFilePath);
 	return 0;
 }
