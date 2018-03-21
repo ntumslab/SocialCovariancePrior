@@ -2,7 +2,7 @@
 
 Chin-Chi Hsu, Mi-Yen Yeh, Shou-De Lin
 
-**Under Submission to IEEE Transactions on Knowledge and Data Engineering**
+**IEEE Transactions on Knowledge and Data Engineering**
 
 ## Directories
 
